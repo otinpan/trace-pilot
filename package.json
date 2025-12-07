@@ -20,8 +20,14 @@
       {
         "category": "Trace Pilot", 
         "command": "trace-pilot.store-in-repository",
-        "title": "pasted lines are stored in repository",
-        "icon": "$(clippy)"
+        "title": "store!",
+        "icon": "$(copy)"
+      },
+      {
+        "category": "Trace Pilot",
+        "command": "trace-pilot.paste",
+        "title": "paste!",
+        "icon": "$(paste)"
       }
     ],
 
@@ -30,7 +36,13 @@
         "command": "trace-pilot.store-in-repository",
         "group": "navigation",
         "when": "!virtualWorkspace"
-      }]
+      },
+      {
+        "command":"trace-pilot.paste",
+        "group": "navigation",
+        "when":"!virtualWorkspace"
+      }
+    ]
     }
   },
   "scripts": {
