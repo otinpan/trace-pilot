@@ -26,3 +26,4 @@ export function logStore(_ctx: LogContext): void {
   LogChannel.appendLine(_ctx.content);
   LogChannel.appendLine('---');
 }
+

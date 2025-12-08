@@ -20,14 +20,14 @@
       {
         "category": "Trace Pilot", 
         "command": "trace-pilot.store-in-repository",
-        "title": "store!",
+        "title": "copy&store!",
         "icon": "$(copy)"
       },
       {
         "category": "Trace Pilot",
         "command": "trace-pilot.paste",
         "title": "paste!",
-        "icon": "$(paste)"
+        "icon": "$(check)"
       }
     ],
 

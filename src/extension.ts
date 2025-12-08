@@ -1,4 +1,4 @@
-import{
+import {
 	commands,
 	env,
 	ExtensionContext,
@@ -6,21 +6,25 @@ import{
 	StatusBarItem,
 	TextEditor,
 	window,
-}from 'vscode';
+	languages,
+	CodeLens,
+	CodeLensProvider,
+	Range,
+	TextDocument,
+	TextEditorCursorStyle,
+} from 'vscode';
 
 
 import * as cp from 'child_process';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import {logStore} from './logger';
-class CopiedContent{
-	copied_text:string;
+import {getRepositoryPath, ensureGitRepo} from './repository';
+import * as index_repository from './index-repository';
+import { markAsUntransferable } from 'worker_threads';
+import {MetaData,CopiedContent,TraceMetaEntry} from './common';
 
-	constructor(_copied_text: string){
-		this.copied_text=_copied_text;
-	}
-}
+const simbolTracePilot:string='@trace-pilot';
 
 
 export function activate(context: ExtensionContext) {
@@ -80,13 +84,10 @@ async function mainCopy(): Promise<boolean>{
 		});
 
 		// クリップボードに書き込むメタデータ
-		const meta={
-			hash,
-			content: copiedText,
-			filePath: editor.document.uri.fsPath,
-		};
+		const metaData=new MetaData(content,editor.document.uri.fsPath,new Date().toISOString());
+
 		// エスケープ
-		const tracer = `${copiedText} // @trace-pilot${JSON.stringify(meta)}`;
+		const tracer = `${copiedText} // ${simbolTracePilot} ${JSON.stringify(metaData)}`;
 		await env.clipboard.writeText(tracer);
 
 
@@ -105,7 +106,7 @@ async function calculateHashAndStore(_content: CopiedContent):Promise<string>{
 	return new Promise<string> ((resolve,reject)=>{
 		// シェルを叩く (出力をストリームとして少しずつ扱う)
 		// printf '%s' "$CONTENT" | git hash-object -w --stdin でハッシュ値を生成
-		// blobオブジェクトとして保存
+		// blobオブジェクト (バイト列) として保存
 		const git=cp.spawn('git',['hash-object','-w','--stdin'],{
 			cwd:repoPath
 		});
@@ -116,12 +117,12 @@ async function calculateHashAndStore(_content: CopiedContent):Promise<string>{
 		// 標準出力
 		git.stdout.on('data',(data)=>{
 			stdout+=data.toString();
-		})
+		});
 
 		// 標準エラー出力
 		git.stderr.on('data',(data)=>{
 			stderr+=data.toString();
-		})
+		});
 
 		// 子プロセスの起動に失敗
 		git.on('error',(err)=>{
@@ -136,7 +137,7 @@ async function calculateHashAndStore(_content: CopiedContent):Promise<string>{
 			}else{
 				reject(new Error(`git hash-object exited with code ${code}: ${stderr}`));
 			}
-		})
+		});
 
 		// text書き込み
 		git.stdin.write(_content.copied_text,'utf8');
@@ -144,34 +145,65 @@ async function calculateHashAndStore(_content: CopiedContent):Promise<string>{
 	});
 }
 
-function getRepositoryPath():string{
-	const home=os.homedir();
-	return path.join(home,'.trace-pilot');
-}
 
-// リポジトリの存在確認・作成
-function ensureGitRepo(_repoPath:string):void{
-	// ファイル・ディレクトリが存在するかチェック (同期的)
-	if(!fs.existsSync(_repoPath)){
-		// 作成
-		fs.mkdirSync(_repoPath,{recursive:true});
-	}
-	// .gitが存在するかチェック
-	if(!fs.existsSync(path.join(_repoPath,'.git'))){
-		// リポジトリ作成
-		cp.execFileSync('git',['init'],{cwd:_repoPath});
-	}
-}
 
 
 // ペーストトリガーがonになったら呼ばれる
 async function mainPaste(): Promise<boolean>{
-	// クリップボードの内容を取得
-	const copiedText=await env.clipboard.readText();
+	const editor=window.activeTextEditor;
+	if(!editor){
+		window.showInformationMessage("error: window is invalid");
+		return false;
+	}
 
-	if(!copiedText){
+	// クリップボードの内容を取得
+	const raw=await env.clipboard.readText();
+
+	if(!raw){
 		window.showInformationMessage("clipboard is empty!");
 		return false;
+	}
+
+	// 行からsimbolTracePilotを探す
+	const marker= '// ' + simbolTracePilot;
+	const idx=raw.indexOf(marker);
+
+	let pasteText:string=raw;
+	let meta:any=undefined;
+	if(idx!==-1){
+		// 元のコピーしたテキスト部分とメタデータの分離
+		pasteText=raw.slice(0,idx);
+		const jsonPart=raw.slice(idx+marker.length);
+
+		try{
+			meta=JSON.parse(jsonPart);
+		}catch(err){
+			window.showInformationMessage("error: failed to parse trace-pilot metadata");
+			console.error("Failed to parse trace-pilot metadata:", err);
+			return false;
+		}
+
+		const selection=editor.selection;
+		const start=selection.start; // ペースト前のカーソルの位置
+
+		// 選択している範囲を置換 (ペースト)
+		await editor.edit(editBuilder=>{
+			editBuilder.replace(selection,pasteText);
+		});
+
+		const end=editor.selection.active; //replace後のカーソル位置
+
+		console.log("MetaData:",meta);
+		if(meta!==undefined){
+			const entry: TraceMetaEntry={
+				start,
+				end,
+				meta: meta,
+			};
+			// index.jsonにメタデータの保存
+			index_repository.addTraceMetadata(entry);
+		}
+
 	}
 
 	return true;
@@ -182,3 +214,17 @@ function storeInRepository():void{
 }
 
 export function deactivate() {}
+
+
+//めも
+/** blobからpdfへの復元
+git cat-file -p <hash値> > output.pdf
+* 中身の確認
+cd ~/.trace-pilot
+git cat-file -p <ハッシュ値>
+* tracerの部分の非表示化
+printf("%d", 0); // trace-pilot {hash: x0123, content: "printf.."}
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 ここだけ click to collapse で消したい
+
+*/
