@@ -226,5 +226,20 @@ git cat-file -p <ハッシュ値>
 printf("%d", 0); // trace-pilot {hash: x0123, content: "printf.."}
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                  ここだけ click to collapse で消したい
+これは無理
 
-*/
+Copyボタン（trace-pilot.store-in-repository）
+・選択範囲を取得
+・ハッシュ計算（git blobなど）
+・メタデータ生成（元ファイルパス・時刻・hash等）
+・クリップボードに「本文＋メタデータ」を書き込む（今の方式）
+・ついでに index.json（またはストア）に「コピーイベント」も保存しておくと後で検索しやすい
+
+Pasteボタン（trace-pilot.paste）
+・クリップボードを読む
+・// @trace-pilot {...} をパース
+・本文を貼り付け
+・「貼り付け位置（Range）＋hash/metadata」を index.json に保存
+・必要なら CodeLens/Decoration を貼って “リンク” を見える化
+
+				 */
