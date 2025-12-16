@@ -1,3 +1,9 @@
+import * as crypto from "crypto";
+import * as fs from 'fs';
+import * as cp from 'child_process';
+import path from 'path';
+import { error } from 'console';
+
 export class CopiedContent{
 	copied_text:string;
 	hash?:string;
@@ -23,4 +29,22 @@ export type TraceMetaEntry={
     start:{line:number,character:number}; //選択範囲の開始位置 (行、列)
     end:{line:number,character:number};
     meta: MetaData
+}
+
+export function makeID(): string{
+	return crypto.randomBytes(8).toString("hex");
+}
+
+
+
+export function execAsync(cmd: string,cwd:string): Promise<{stdout: string,stderr: string}>{
+	return new Promise((resolve,reject)=>{
+		cp.exec(cmd, { cwd }, (err, stdout, stderr) => {
+			if(err){
+				reject(new Error((stderr || stdout || err.message).toString()));
+				return;
+			}
+			resolve({ stdout: stdout.toString(), stderr: (stderr ?? '').toString() });
+		});
+	});
 }

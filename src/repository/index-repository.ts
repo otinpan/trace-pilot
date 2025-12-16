@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { window } from 'vscode';
-import {TraceMetaEntry} from './common';
+import {TraceMetaEntry} from '../common';
 
 // index.jsonのパスを取得
 function getIndexPath():string{

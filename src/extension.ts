@@ -19,16 +19,18 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {logStore} from './logger';
-import {getRepositoryPath, ensureGitRepo} from './repository';
-import * as index_repository from './index-repository';
+import {Container} from './container';
+import {getRepositoryPath, getRepositoryPathOrNull} from './repository/repository';
+import * as index_repository from './repository/index-repository';
 import { markAsUntransferable } from 'worker_threads';
 import {MetaData,CopiedContent,TraceMetaEntry} from './common';
 
 const simbolTracePilot:string='@trace-pilot';
 
 
-export function activate(context: ExtensionContext) {
+export async function activate(context: ExtensionContext) {
 
+	const container=await Container.create
 	// コピーアイテムのクリック時に呼ばれる関数の定義
 	const copyCommandID:string='trace-pilot.store-in-repository';
 	context.subscriptions.push(commands.registerCommand(copyCommandID,async()=>{
@@ -100,8 +102,10 @@ async function mainCopy(): Promise<boolean>{
 
 
 async function calculateHashAndStore(_content: CopiedContent):Promise<string>{
-	const repoPath=getRepositoryPath();
-	ensureGitRepo(repoPath);
+	const repoPath=await getRepositoryPathOrNull();
+	if(!repoPath){
+		throw new Error("Not a git repository. Open a folder that has .git (or init first).");
+	}
 
 	return new Promise<string> ((resolve,reject)=>{
 		// シェルを叩く (出力をストリームとして少しずつ扱う)

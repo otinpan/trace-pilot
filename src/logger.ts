@@ -17,7 +17,7 @@ export function logStore(_ctx: LogContext): void {
   const filePath = _ctx.filePath ?? '-';
   const contentLength = Buffer.byteLength(_ctx.content, 'utf8');
 
-  const headerLine = `${filePath} ${user} - [${now}] "TCC STORE local" 0 ${contentLength}`;
+  const headerLine = `${filePath} ${user} - [${now}] "trace-pilot STORE local" 0 ${contentLength}`;
 
   LogChannel.appendLine(headerLine);
   LogChannel.appendLine('===');

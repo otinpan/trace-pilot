@@ -10,9 +10,11 @@ import{
 
 import * as cp from 'child_process';
 import {Metadata, WEB_INFO_SOURCE} from '../constants/types';
-import {makeID} from '../common'
-import {getRepositoryPath,ensureGitRepo} from '../repository';
+import {execAsync, makeID} from '../common'
+import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
+import { ensureWorktree } from '../repository/worktree';
+import path from 'path';
 
 export class TraceEngine{
     constructor(
@@ -59,8 +61,19 @@ export class TraceEngine{
     };
 
     async calculateHashAndStore(_copied_text: string): Promise<string>{
-        const repoPath=getRepositoryPath();
-        ensureGitRepo(repoPath);
+        const repoPath=await getRepositoryPathOrNull();
+	    if(!repoPath){
+	    	throw new Error("Not a git repository. Open a folder that has .git (or init first).");
+        }
+
+        // worktreeの作成
+        ensureWorktree(repoPath);
+
+        // ブランチの移動
+        const worktreePath=path.join(repoPath,'./trace-worktree');
+
+        // コマンドの実行
+        // to do
 
         return new Promise<string>((resolve,reject)=>{
             // シェルを叩く
