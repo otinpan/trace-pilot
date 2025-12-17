@@ -73,34 +73,28 @@ export class TraceEngine{
         const worktreePath=path.join(repoPath,'./trace-worktree');
 
         // コマンドの実行
-        // to do
+        // blobオブジェクトの作成
+        let hash=await this.createBlobObject(worktreePath,_copied_text);
+        // ステージング
 
-        return new Promise<string>((resolve,reject)=>{
-            // シェルを叩く
-           // printf '%s' $CONTENT | git hash-object -w --stdin でハッシュ値を生成
-           // blobオブジェクトとして保存
-           const git=cp.spawn('git',['hash-object','-w','--stdin'],{
-                cwd:repoPath
-            });
-        
-            let stdout='';
-            let stderr='';
-        
-            // 標準出力
-            git.stdout.on('data',(data)=>{
-                stdout+=data.toString();
-            });
-        
-            // 標準エラー出力
-            git.stderr.on('data',(data)=>{
-                stderr+=data.toString();
-            });
-        
-            // 子プロセスの起動に失敗
+
+        return hash;
+    }
+
+    async createBlobObject(repoPath:string,text:string):Promise<string>{
+        return new Promise((resolve,reject)=>{
+            const git=cp.spawn("git",["hash-object","-w","--stdin"],{cwd:repoPath});
+
+            let stdout="";
+            let stderr="";
+
+            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
+            git.stdout?.on("data",(d)=>(stderr+=d.toString("utf8")));
+
             git.on('error',(err)=>{
                 reject(err);
             });
-        
+
             // 子プロセスが終了
             git.on('close',(code)=>{
                 // 成功
@@ -112,11 +106,37 @@ export class TraceEngine{
             });
         
             // text書き込み
-            git.stdin.write(_copied_text,'utf8');
+            git.stdin.write(text,'utf8');
             git.stdin.end();
+
         });
     }
 
+    async stageBlobObject(repoPath:string,hash:string){
+        const mode="100644";
+        const targetPath=`blobs/${hash}.bin`;
+
+        return new Promise((resolve,reject)=>{
+            const git=cp.spawn(
+                "git",
+                ["update-index","--add","--cacheinfo",mode,hash,targetPath],
+                {cwd:repoPath}
+            );
+
+            let stdout="";
+            let stderr="";
+
+            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
+            git.stderr?.on("data", (d) => (stderr += d.toString("utf8")));
+
+            git.on("error", reject);
+
+            git.on("close", (code) => {
+                if (code === 0) resolve(stdout.trim());
+                else reject(new Error(`git update-index exited with code ${code}: ${stderr || stdout}`));
+            });
+        });
+    }
 
 
     async VSCodePaste(): Promise<boolean>{
@@ -135,6 +155,7 @@ export class TraceEngine{
     // メタデータの保存
     // リンクを作る
 
+    //b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0
     
 
     // 候補1
