@@ -42,7 +42,8 @@ export class TraceEngine{
         try{
             // 元データの保存、ハッシュ値
             const originalHash=await this.calculateHashAndStore(copiedText);
-
+            
+            
             const meta: Metadata={
                 hash: originalHash,
                 url: editor.document.uri.toString(true),
@@ -54,8 +55,11 @@ export class TraceEngine{
 
             // メタデータの保存、ハッシュ値
             const metaJSON=JSON.stringify(meta);
+
+            // windowに表示
             const metaHash=await this.calculateHashAndStore(metaJSON);
 
+            window.showInformationMessage(metaHash);
             // 元のテキストとハッシュ値をクリップボードに書き込む
             const marker=`// @trace-pilot ${metaHash}`;
             const clipboardText=`${marker}\n${copiedText}`;
@@ -85,15 +89,12 @@ export class TraceEngine{
         // コマンドの実行
         // blobオブジェクトの作成
         let hash=await this.createBlobObject(worktreePath,_copied_text);
-        window.showInformationMessage(hash);
         // stage
         await this.stageBlobObject(worktreePath,hash,_copied_text);
-        window.showInformationMessage(worktreePath);
-        
         // commit
         await this.commitBlobObject(worktreePath);
         // push
-        await this.pushBlobObject(worktreePath);
+        //await this.pushBlobObject(worktreePath);
 
         return hash;
     }
