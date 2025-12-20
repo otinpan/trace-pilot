@@ -32,9 +32,11 @@ export class Container{
 
     // 非同期的な初期化処理
     public static async create(context: ExtensionContext){
-        const newContainer=new Container(context);
+        if(!Container.#instance){
+            Container.#instance=new Container(context);
+        }
 
-        return newContainer;
+        return Container.#instance;
     }
 
     // gette

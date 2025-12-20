@@ -7,24 +7,7 @@ import * as path from "path";
 import { TraceEngine } from "../engine/engine"; 
 import * as repository from "../repository/repository";
 import {Metadata, WEB_INFO_SOURCE} from '../constants/types';
-
-
-function execGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const p = cp.spawn("git", args, { cwd });
-    let stdout = "";
-    let stderr = "";
-
-    p.stdout.on("data", (d) => (stdout += d.toString("utf8")));
-    p.stderr.on("data", (d) => (stderr += d.toString("utf8")));
-
-    p.on("error", reject);
-    p.on("close", (code) => {
-      if (code === 0) resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
-      else reject(new Error(`git ${args.join(" ")} failed (${code}): ${stderr || stdout}`));
-    });
-  });
-}
+import {execGit} from "../common";
 
 
 async function isPathStaged(cwd: string, targetPath: string, expectedHash: string): Promise<boolean> {
@@ -129,7 +112,7 @@ suite("Is Blob object staged", () => {
     assert.ok(/^[0-9a-f]{40}$/.test(hash), `hash looks invalid: ${hash}`);
 
     const targetPath = `blobs/${hash}.bin`;
-    await engine.stageBlobObject(worktreeRoot, hash);
+    await engine.stageBlobObject(worktreeRoot, hash,text);
 
     const staged = await isPathStaged(worktreeRoot, targetPath, hash);
     assert.ok(staged, `expected ${targetPath} to be staged with hash ${hash}`);
@@ -141,7 +124,7 @@ suite("Is Blob object staged", () => {
     const hash2 = await engine.createBlobObject(worktreeRoot, text);
     const targetPath = `blobs/${hash2}.bin`;
 
-    await engine.stageBlobObject(worktreeRoot, hash2);
+    await engine.stageBlobObject(worktreeRoot, hash2,text);
 
     // stagedがあることを念押しチェック（これがあると原因切り分けも楽）
     const cached = await execGit(["diff", "--cached", "--name-status"], worktreeRoot);
@@ -180,6 +163,8 @@ suite("Is metadata stored correctly",function (){
     // ★ここに付ける
     await execGit(["reset", "--hard"], worktreeRoot);
     await execGit(["clean", "-fd"], worktreeRoot);
+
+    console.error("worktreeRoot top:", (await execGit(["rev-parse", "--show-toplevel"], worktreeRoot)).stdout.trim());
 
     // commit が落ちないように user 設定（テスト環境用）
     await execGit(["config", "user.name", "trace-test"], worktreeRoot);

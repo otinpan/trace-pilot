@@ -7,14 +7,16 @@ import{
     window,
     env,
 } from 'vscode';
-
+import * as fs from "fs";
+import * as path from "path";
 import * as cp from 'child_process';
 import {Metadata, WEB_INFO_SOURCE} from '../constants/types';
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
 import { ensureWorktree } from '../repository/worktree';
-import path from 'path';
-import { json } from 'stream/consumers';
+import { json, text } from 'stream/consumers';
+import {execGit} from "../common";
+import { fstat } from 'fs';
 
 export class TraceEngine{
     constructor(
@@ -34,6 +36,7 @@ export class TraceEngine{
         const copiedText:string=editor.document.getText(editor.selection);
         if(!copiedText){
             window.showInformationMessage("error: select no contents");
+            return false;
         }
 
         try{
@@ -53,9 +56,10 @@ export class TraceEngine{
             const metaJSON=JSON.stringify(meta);
             const metaHash=await this.calculateHashAndStore(metaJSON);
 
-            // メタデータをjsonに変換して書き込み
-            await env.clipboard.writeText(JSON.stringify(meta));
-
+            // 元のテキストとハッシュ値をクリップボードに書き込む
+            const marker=`// @trace-pilot ${metaHash}`;
+            const clipboardText=`${marker}\n${copiedText}`;
+            await env.clipboard.writeText(clipboardText);
 
             window.showInformationMessage("success: stored + metadata copied!");
             return true;
@@ -70,6 +74,7 @@ export class TraceEngine{
 	    if(!repoPath){
 	    	throw new Error("Not a git repository. Open a folder that has .git (or init first).");
         }
+        
 
         // worktreeの作成
         await ensureWorktree(repoPath);
@@ -80,8 +85,11 @@ export class TraceEngine{
         // コマンドの実行
         // blobオブジェクトの作成
         let hash=await this.createBlobObject(worktreePath,_copied_text);
+        window.showInformationMessage(hash);
         // stage
-        await this.stageBlobObject(worktreePath,hash);
+        await this.stageBlobObject(worktreePath,hash,_copied_text);
+        window.showInformationMessage(worktreePath);
+        
         // commit
         await this.commitBlobObject(worktreePath);
         // push
@@ -90,9 +98,9 @@ export class TraceEngine{
         return hash;
     }
 
-    async createBlobObject(repoPath:string,text:string):Promise<string>{
+    async createBlobObject(worktreePath:string,text:string):Promise<string>{
         return new Promise((resolve,reject)=>{
-            const git=cp.spawn("git",["hash-object","-w","--stdin"],{cwd:repoPath});
+            const git=cp.spawn("git",["hash-object","-w","--stdin"],{cwd:worktreePath});
 
             let stdout="";
             let stderr="";
@@ -121,38 +129,20 @@ export class TraceEngine{
         });
     }
 
-    async stageBlobObject(repoPath:string,hash:string){
-        const mode="100644";
-        const targetPath=`blobs/${hash}.bin`;
+    async stageBlobObject(worktreePath:string,hash:string,text:string){
+        const dir=path.join(worktreePath,"blobs");
+        fs.mkdirSync(dir,{recursive:true});
+        fs.writeFileSync(path.join(dir,`${hash}.bin`),text,"utf8");
 
-        return new Promise((resolve,reject)=>{
-            const git=cp.spawn(
-                "git",
-                ["update-index","--add","--cacheinfo",mode,hash,targetPath],
-                {cwd:repoPath}
-            );
-
-            let stdout="";
-            let stderr="";
-
-            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
-            git.stderr?.on("data", (d) => (stderr += d.toString("utf8")));
-
-            git.on("error", reject);
-
-            git.on("close", (code) => {
-                if (code === 0) resolve(stdout.trim());
-                else reject(new Error(`git update-index exited with code ${code}: ${stderr || stdout}`));
-            });
-        });
+        await execGit(["add",`blobs/${hash}.bin`],worktreePath);
     }
 
-    async commitBlobObject(repoPath:string){
+    async commitBlobObject(worktreePath:string){
         return new Promise((resolve,reject)=>{
             const git=cp.spawn(
                 "git",
                 ["commit","-m","store copied content"],
-                {cwd:repoPath}
+                {cwd:worktreePath}
             );
 
             let stdout="";
@@ -171,12 +161,12 @@ export class TraceEngine{
         });
     }
 
-    async pushBlobObject(repoPath:string){
+    async pushBlobObject(worktreePath:string){
         return new Promise((resolve,reject)=>{
             const git=cp.spawn(
                 "git",
                 ["push","origin","trace-store"],
-                {cwd:repoPath}
+                {cwd:worktreePath}
             );
             let stdout="";
             let stderr="";

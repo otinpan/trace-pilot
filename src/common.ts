@@ -46,3 +46,20 @@ export function execAsync(cmd: string,cwd:string): Promise<{stdout: string,stder
 		});
 	});
 }
+
+export function execGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const p = cp.spawn("git", args, { cwd });
+    let stdout = "";
+    let stderr = "";
+
+    p.stdout.on("data", (d) => (stdout += d.toString("utf8")));
+    p.stderr.on("data", (d) => (stderr += d.toString("utf8")));
+
+    p.on("error", reject);
+    p.on("close", (code) => {
+      if (code === 0) resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+      else reject(new Error(`git ${args.join(" ")} failed (${code}): ${stderr || stdout}`));
+    });
+  });
+}
