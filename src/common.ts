@@ -31,9 +31,7 @@ export type TraceMetaEntry={
     meta: MetaData
 }
 
-export function makeID(): string{
-	return crypto.randomBytes(8).toString("hex");
-}
+
 
 
 

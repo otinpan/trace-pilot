@@ -7,12 +7,11 @@ export enum WEB_INFO_SOURCE{
 }
 
 export interface Metadata{
-    code: string;
     hash: string;
     url: string;
     type: WEB_INFO_SOURCE;
-    timeCopied: number;
-    id: string;
+    timeCopied: string;
+    timeCopiedNumber: number;
     additionalMetaData: AdditionalMetadata;
 }
 

@@ -10,11 +10,11 @@ import{
 
 import * as cp from 'child_process';
 import {Metadata, WEB_INFO_SOURCE} from '../constants/types';
-import {execAsync, makeID} from '../common'
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
 import { ensureWorktree } from '../repository/worktree';
 import path from 'path';
+import { json } from 'stream/consumers';
 
 export class TraceEngine{
     constructor(
@@ -37,20 +37,25 @@ export class TraceEngine{
         }
 
         try{
-            const hash=await this.calculateHashAndStore(copiedText);
+            // 元データの保存、ハッシュ値
+            const originalHash=await this.calculateHashAndStore(copiedText);
 
             const meta: Metadata={
-                code: copiedText,
-                hash,
+                hash: originalHash,
                 url: editor.document.uri.toString(true),
                 type: WEB_INFO_SOURCE.VSCODE,
-                timeCopied: Date.now(),
-                id: makeID(),
+                timeCopied: new Date().toISOString(),
+                timeCopiedNumber: Date.now(),
                 additionalMetaData: null,
             };
 
+            // メタデータの保存、ハッシュ値
+            const metaJSON=JSON.stringify(meta);
+            const metaHash=await this.calculateHashAndStore(metaJSON);
+
             // メタデータをjsonに変換して書き込み
             await env.clipboard.writeText(JSON.stringify(meta));
+
 
             window.showInformationMessage("success: stored + metadata copied!");
             return true;
@@ -67,16 +72,20 @@ export class TraceEngine{
         }
 
         // worktreeの作成
-        ensureWorktree(repoPath);
+        await ensureWorktree(repoPath);
 
         // ブランチの移動
-        const worktreePath=path.join(repoPath,'./trace-worktree');
+        const worktreePath=path.join(repoPath,'.trace-worktree');
 
         // コマンドの実行
         // blobオブジェクトの作成
         let hash=await this.createBlobObject(worktreePath,_copied_text);
-        // ステージング
-
+        // stage
+        await this.stageBlobObject(worktreePath,hash);
+        // commit
+        await this.commitBlobObject(worktreePath);
+        // push
+        await this.pushBlobObject(worktreePath);
 
         return hash;
     }
@@ -89,7 +98,7 @@ export class TraceEngine{
             let stderr="";
 
             git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
-            git.stdout?.on("data",(d)=>(stderr+=d.toString("utf8")));
+            git.stderr?.on("data",(d)=>(stderr+=d.toString("utf8")));
 
             git.on('error',(err)=>{
                 reject(err);
@@ -138,6 +147,51 @@ export class TraceEngine{
         });
     }
 
+    async commitBlobObject(repoPath:string){
+        return new Promise((resolve,reject)=>{
+            const git=cp.spawn(
+                "git",
+                ["commit","-m","store copied content"],
+                {cwd:repoPath}
+            );
+
+            let stdout="";
+            let stderr="";
+
+            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
+            git.stderr?.on("data", (d) => (stderr += d.toString("utf8")));
+
+            git.on("error",reject);
+
+            git.on("close", (code) => {
+                if (code === 0) resolve(stdout.trim());
+                else reject(new Error(`git commit exited with code ${code}: ${stderr || stdout}`));
+            });
+
+        });
+    }
+
+    async pushBlobObject(repoPath:string){
+        return new Promise((resolve,reject)=>{
+            const git=cp.spawn(
+                "git",
+                ["push","origin","trace-store"],
+                {cwd:repoPath}
+            );
+            let stdout="";
+            let stderr="";
+
+            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
+            git.stderr?.on("data", (d) => (stderr += d.toString("utf8")));
+
+            git.on("error",reject);
+
+            git.on("close", (code) => {
+                if (code === 0) resolve(stdout.trim());
+                else reject(new Error(`git push exited with code ${code}: ${stderr || stdout}`));
+            });
+        });
+    }
 
     async VSCodePaste(): Promise<boolean>{
         return true;

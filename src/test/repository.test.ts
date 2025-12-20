@@ -1,11 +1,50 @@
 import * as assert from "assert";
+import * as cp from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
+import { TraceEngine } from "../engine/engine"; 
 import * as repository from "../repository/repository";
+import {Metadata, WEB_INFO_SOURCE} from '../constants/types';
 
-// 単体テスト
+
+function execGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const p = cp.spawn("git", args, { cwd });
+    let stdout = "";
+    let stderr = "";
+
+    p.stdout.on("data", (d) => (stdout += d.toString("utf8")));
+    p.stderr.on("data", (d) => (stderr += d.toString("utf8")));
+
+    p.on("error", reject);
+    p.on("close", (code) => {
+      if (code === 0) resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+      else reject(new Error(`git ${args.join(" ")} failed (${code}): ${stderr || stdout}`));
+    });
+  });
+}
+
+
+async function isPathStaged(cwd: string, targetPath: string, expectedHash: string): Promise<boolean> {
+  const { stdout } = await execGit(["ls-files", "--stage", "--", targetPath], cwd);
+  // 出力例: "100644 <hash> 0    blobs/<hash>.bin"
+  if (!stdout) return false;
+  return stdout.includes(expectedHash) && stdout.includes(targetPath);
+}
+
+async function catFileJSON<T>(hash: string,repoPath:string):Promise<T>{
+  const {stdout}=await execGit(["cat-file","-p",hash],repoPath);
+  return JSON.parse(stdout.trim()) as T;
+}
+
+async function catFileBlob(hash: string,repoPath:string):Promise<string>{
+  const {stdout}=await execGit(["cat-file","-p",hash],repoPath);
+  return stdout;
+}
+
+// .gitが存在するフォルダにたどり着いているか
 suite("Get Git repository path", () => {
   test("getRepositoryPath from ~/thesis/trace-pilot/src/engine", async () => {
     const home = os.homedir();
@@ -49,3 +88,142 @@ suite("Get Git repository path", () => {
 });
 
 
+
+// blobオブジェクトが作成され、ステージングされている
+
+suite("Is Blob object staged", () => {
+  let repoPath: string;
+  let worktreeRoot: string;
+  const engine = new TraceEngine(null as any);
+  let hash: string;
+
+  suiteSetup(async () => {
+    // repoPath を決める（あなたの test でやってるのと同じ）
+    const home = os.homedir();
+    const cwdPath = path.join(home, "thesis", "trace-pilot", "src", "engine");
+    repoPath = await repository.getRepositoryPath(cwdPath);
+
+    worktreeRoot = path.join(repoPath, ".trace-worktree");
+
+    // worktree が無いなら作る（必要なら）
+    if (!fs.existsSync(worktreeRoot)) {
+      await execGit(["worktree", "add", worktreeRoot, "trace-store"], repoPath);
+    }
+
+    // ★ここに付ける
+    await execGit(["reset", "--hard"], worktreeRoot);
+    await execGit(["clean", "-fd"], worktreeRoot);
+
+    // commit が落ちないように user 設定（テスト環境用）
+    await execGit(["config", "user.name", "trace-test"], worktreeRoot);
+    await execGit(["config", "user.email", "trace-test@example.com"], worktreeRoot);
+  });
+
+  // ステージングされたかどうか
+  test("hash-object creates blob and update-index stages it (without creating real file)", async () => {
+
+    const worktreeRoot=path.join(repoPath,'.trace-worktree');
+    const text = "hello trace-pilot\nline2\n";
+    hash = await engine.createBlobObject(worktreeRoot, text);
+
+    assert.ok(/^[0-9a-f]{40}$/.test(hash), `hash looks invalid: ${hash}`);
+
+    const targetPath = `blobs/${hash}.bin`;
+    await engine.stageBlobObject(worktreeRoot, hash);
+
+    const staged = await isPathStaged(worktreeRoot, targetPath, hash);
+    assert.ok(staged, `expected ${targetPath} to be staged with hash ${hash}`);
+  });
+
+  // コミットされたか
+  test("commit contains the staged blobs/<hash>.bin entry", async () => {
+    const text = `commit-test-${Date.now()}`;
+    const hash2 = await engine.createBlobObject(worktreeRoot, text);
+    const targetPath = `blobs/${hash2}.bin`;
+
+    await engine.stageBlobObject(worktreeRoot, hash2);
+
+    // stagedがあることを念押しチェック（これがあると原因切り分けも楽）
+    const cached = await execGit(["diff", "--cached", "--name-status"], worktreeRoot);
+    assert.ok(cached.stdout.includes(targetPath), `not staged:\n${cached.stdout}`);
+
+    await engine.commitBlobObject(worktreeRoot);
+
+    const { stdout } = await execGit(["ls-tree", "-r", "HEAD", "--", targetPath], worktreeRoot);
+    assert.ok(stdout.includes(hash2), `expected HEAD tree to include ${hash2}, got: ${stdout}`);
+  });
+
+});
+
+
+// メタデータの保存
+suite("Is metadata stored correctly",function (){
+  this.timeout(20000);
+  const engine = new TraceEngine(null as any);
+  let worktreeRoot:string;
+  let repoPath:string;
+  let restoredMeta:any;
+  let text:string;
+  suiteSetup(async () => {
+    // repoPath を決める（あなたの test でやってるのと同じ）
+    const home = os.homedir();
+    const cwdPath = path.join(home, "thesis", "trace-pilot", "src", "engine");
+    repoPath = await repository.getRepositoryPath(cwdPath);
+
+    worktreeRoot = path.join(repoPath, ".trace-worktree");
+
+    // worktree が無いなら作る（必要なら）
+    if (!fs.existsSync(worktreeRoot)) {
+      await execGit(["worktree", "add", worktreeRoot, "trace-store"], repoPath);
+    }
+
+    // ★ここに付ける
+    await execGit(["reset", "--hard"], worktreeRoot);
+    await execGit(["clean", "-fd"], worktreeRoot);
+
+    // commit が落ちないように user 設定（テスト環境用）
+    await execGit(["config", "user.name", "trace-test"], worktreeRoot);
+    await execGit(["config", "user.email", "trace-test@example.com"], worktreeRoot);
+  });
+  test("Is metadata stored",async()=>{
+    text=`test - -${Date.now()}`;
+
+    const originalHash=await engine.calculateHashAndStore(text);
+
+    const meta:Metadata={
+      hash: originalHash,
+      url: "../test/test/test.text",
+      type: WEB_INFO_SOURCE.VSCODE,
+      timeCopied: new Date().toISOString(),
+      timeCopiedNumber: Date.now(),
+      additionalMetaData: null,
+    };
+
+    const metaJSON=JSON.stringify(meta);
+    const metaHash=await engine.calculateHashAndStore(metaJSON);
+
+    restoredMeta=await catFileJSON(metaHash,worktreeRoot);
+
+    console.error("### TRACE-PILOT TEST LOG ###", restoredMeta);
+    process.stderr.write("### STDERR MARK ###\n");
+
+    assert.deepStrictEqual(restoredMeta,meta);
+
+  });
+
+  test("output original text",async()=>{
+    if(restoredMeta===null){
+      console.error("### restoredMeta is null");
+      return;
+    }
+
+    const originalHash=restoredMeta.hash;
+
+    const restoredText=await catFileBlob(originalHash,worktreeRoot);
+
+    console.error("### TRACE-PILOT TEST LOG ###",restoredText);
+    process.stderr.write("### STDERR MARK ###\n");
+
+    assert.deepStrictEqual(restoredText,text);
+  });
+});
