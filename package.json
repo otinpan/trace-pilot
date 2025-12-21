@@ -28,6 +28,11 @@
         "command": "trace-pilot.paste",
         "title": "paste!",
         "icon": "$(check)"
+      },
+      {
+        "category": "Trace Pilot",
+        "command": "trace-pilot.openMeta",
+        "title": "openMeta"
       }
     ],
 

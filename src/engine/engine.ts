@@ -17,6 +17,7 @@ import { ensureWorktree } from '../repository/worktree';
 import { json, text } from 'stream/consumers';
 import {execGit} from "../common";
 import { fstat } from 'fs';
+import { toEditorSettings } from 'typescript';
 
 export class TraceEngine{
     constructor(
@@ -101,7 +102,7 @@ export class TraceEngine{
 
     async createBlobObject(worktreePath:string,text:string):Promise<string>{
         return new Promise((resolve,reject)=>{
-            const git=cp.spawn("git",["hash-object","-w","--stdin"],{cwd:worktreePath});
+            const git=cp.spawn("git",["hash-object","--stdin"],{cwd:worktreePath});
 
             let stdout="";
             let stderr="";
@@ -135,7 +136,7 @@ export class TraceEngine{
         fs.mkdirSync(dir,{recursive:true});
         fs.writeFileSync(path.join(dir,`${hash}.bin`),text,"utf8");
 
-        await execGit(["add",`blobs/${hash}.bin`],worktreePath);
+        await execGit(["add","-f",`blobs/${hash}.bin`],worktreePath);
     }
 
     async commitBlobObject(worktreePath:string){
@@ -188,6 +189,15 @@ export class TraceEngine{
         return true;
     }
 
+    async getMetaData(metaHash:string):Promise<boolean>{
+        return true;
+    }
+
+    async VSCodeShowInformation(metaHash:string):Promise<boolean>{
+        window.showInformationMessage("metaHash");
+        return true;
+    }
+
     // コピー
     // 元の文書を保存する → ハッシュ値
     // メタデータの生成
@@ -199,8 +209,6 @@ export class TraceEngine{
     // メタデータの生成
     // メタデータの保存
     // リンクを作る
-
-    //b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0
     
 
     // 候補1
