@@ -194,7 +194,7 @@ export class TraceEngine{
     }
 
     async VSCodeShowInformation(metaHash:string):Promise<boolean>{
-        window.showInformationMessage("metaHash");
+        window.showInformationMessage(`${metaHash}`);
         return true;
     }
 

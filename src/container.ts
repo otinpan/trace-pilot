@@ -121,15 +121,22 @@ export class Container{
                     if(!m)return;
                     const metaHash=m[1];
 
-                    // ユーザーがマウスをすぐ動かしときにキャンセル
+                    // ユーザーがマウスをすぐ動かしときはフックしない
                     if(token.isCancellationRequested)return;
 
                     const meta=await this.engine.getMetaData(metaHash);
+                    if(token.isCancellationRequested)return;
 
                     // Hovorに表示する文章 (Markdown)
                     const md=new MarkdownString();
                     md.isTrusted=true;
+
+                    const args=encodeURIComponent(JSON.stringify([metaHash]));
+                    const cmdUri = `command:trace-pilot.openMeta?${args}`;
+
                     md.appendMarkdown(`**Trace-Pilot**\n\n`);
+                    md.appendMarkdown(`- hash: \`${metaHash}\`\n`);
+                    md.appendMarkdown(`\n[Show Information](${cmdUri})\n`);
 
                     return new Hover(md);
                 }
