@@ -136,7 +136,7 @@ export class Container{
 
                     md.appendMarkdown(`**Trace-Pilot**\n\n`);
                     md.appendMarkdown(`- hash: \`${metaHash}\`\n`);
-                    md.appendMarkdown(`\n[Show Information](${cmdUri})\n`);
+                    md.appendMarkdown(`\n[Show full text](${cmdUri})\n`);
 
                     return new Hover(md);
                 }

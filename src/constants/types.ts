@@ -7,7 +7,8 @@ export enum WEB_INFO_SOURCE{
 }
 
 export interface Metadata{
-    hash: string;
+    originalHash: string;
+    fullTextHash: string,
     url: string;
     type: WEB_INFO_SOURCE;
     timeCopied: string;

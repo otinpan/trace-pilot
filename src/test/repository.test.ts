@@ -176,7 +176,8 @@ suite("Is metadata stored correctly",function (){
     const originalHash=await engine.calculateHashAndStore(text);
 
     const meta:Metadata={
-      hash: originalHash,
+      originalHash: originalHash,
+      fullTextHash: "fulltext",
       url: "../test/test/test.text",
       type: WEB_INFO_SOURCE.VSCODE,
       timeCopied: new Date().toISOString(),

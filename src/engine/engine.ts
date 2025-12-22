@@ -4,8 +4,14 @@ import{
     commands,
     TextEditor,
     TextEditorEdit,
+    Range,
+    Position,
     window,
     env,
+    DocumentDropEdit,
+    TextEditorDecorationType,
+    DecorationOptions,
+    workspace,
 } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
@@ -20,6 +26,7 @@ import { fstat } from 'fs';
 import { toEditorSettings } from 'typescript';
 
 export class TraceEngine{
+    private highlightDeco?: TextEditorDecorationType;
     constructor(
         private readonly context: ExtensionContext
     ){
@@ -40,13 +47,19 @@ export class TraceEngine{
             return false;
         }
 
+        // 全文のテキスト
+        const fullText:string=editor.document.getText();
+
         try{
-            // 元データの保存、ハッシュ値
+            // 選択範囲テキストの保存、ハッシュ値
             const originalHash=await this.calculateHashAndStore(copiedText);
-            
+
+            // 全文保存
+            const fullTextHash=await this.calculateHashAndStore(fullText);
             
             const meta: Metadata={
-                hash: originalHash,
+                originalHash: originalHash,
+                fullTextHash: fullTextHash,
                 url: editor.document.uri.toString(true),
                 type: WEB_INFO_SOURCE.VSCODE,
                 timeCopied: new Date().toISOString(),
@@ -194,8 +207,96 @@ export class TraceEngine{
     }
 
     async VSCodeShowInformation(metaHash:string):Promise<boolean>{
-        window.showInformationMessage(`${metaHash}`);
-        return true;
+        try{
+            const metaJSON=await this.restoreTextByHash(metaHash);
+            const metaData=JSON.parse(metaJSON) as Metadata;
+
+            const fullText=await this.restoreTextByHash(metaData.fullTextHash);
+            const copiedText=await this.restoreTextByHash(metaData.originalHash);
+
+            await this.showFullTextAndHighlight(fullText,copiedText);
+
+            return true;
+        }catch(e:any){
+            window.showErrorMessage(`failed to open meta: ${e?.message ?? e}`);
+            return false;
+        }
+    }
+
+    // full textからneedleを見つけてRangeを返す
+    findAllRanges(fullText: string, needle: string): Range[] {
+        if (!needle) return [];
+
+        const ranges: Range[] = [];
+        let idx = 0;
+
+        while (true) {
+          const hit = fullText.indexOf(needle, idx);
+          if (hit === -1) break;
+        
+          const start = this.offsetToPosition(fullText, hit);
+          const end = this.offsetToPosition(fullText, hit + needle.length);
+          ranges.push(new Range(start, end));
+        
+          // 同じ場所で無限ループしないように進める（needleが空でない前提）
+          idx = hit + Math.max(1, needle.length);
+        }
+        return ranges;
+    }
+    // 文字オフセットを（行、列）に直す
+    offsetToPosition(text: string, offset: number): Position {
+        const before = text.slice(0, offset);
+        const lines = before.split("\n");
+        const line = lines.length - 1;
+        const character = lines[lines.length - 1].length;
+        return new Position(line, character);
+    }
+
+    // 全文の表示
+    async showFullTextAndHighlight(fullText: string,copiedText: string){
+        const doc=await workspace.openTextDocument({
+            content: fullText,
+            language: "plaintext",
+        });
+
+        const editor=await window.showTextDocument(doc,{preview:false});
+
+        this.highlightDeco?.dispose();
+        this.highlightDeco=window.createTextEditorDecorationType({
+            backgroundColor: "rgba(255, 230, 0, 0.35)",
+            border: "1px solid rgba(255, 230, 0, 0.8)",
+            isWholeLine: false,
+        });
+
+        const ranges=this.findAllRanges(fullText,copiedText);
+        const decorations: DecorationOptions[] = ranges.map((range) => ({
+            range,
+            hoverMessage: "Copied text",
+        }));
+
+        editor.setDecorations(this.highlightDeco,decorations);
+
+        // 見つかったら最初の一致箇所にジャンプ
+        if(ranges.length>0){
+            editor.revealRange(ranges[0],1);
+        }else{
+            window.showInformationMessage("Could not find copied text in full text");
+        }
+    }
+
+
+    // hashからテキストの復元
+    async restoreTextByHash(hash:string):Promise<string>{
+        const repoPath=await getRepositoryPathOrNull();
+        if(!repoPath){
+            throw new Error("Not a git repository. Open a folder that has .git (or init first).");
+        }
+
+        const worktreePath=path.join(repoPath,".trace-worktree");
+        const blobPath=path.join(worktreePath,"blobs",`${hash}.bin`);
+
+        return fs.readFileSync(blobPath,"utf8");
+        
     }
 
     // コピー
