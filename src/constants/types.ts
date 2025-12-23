@@ -18,8 +18,12 @@ export interface Metadata{
 
 export type AdditionalMetadata=
 | ChatGptCopyBuffer
+| VSCodeCopyMedia
 | null;
 
+export interface VSCodeCopyMedia{
+    isText: boolean;
+}
 export interface ChatGptCopyBuffer{ 
     messageCopied: ThreadPair;
 }

@@ -77,7 +77,7 @@ export class Container{
             // ハッシュ値の計算＋貼り付け＋リポジトリ保存
             const ok:boolean=await this.engine.VSCodeCopy();
             if(ok){
-                window.showInformationMessage("success: store copied text in repository!");
+                return;
             }
         });
 

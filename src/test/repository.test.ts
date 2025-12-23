@@ -8,6 +8,14 @@ import { TraceEngine } from "../engine/engine";
 import * as repository from "../repository/repository";
 import {Metadata, WEB_INFO_SOURCE} from '../constants/types';
 import {execGit} from "../common";
+import { 
+calculateHashAndStore,
+calculateHashAndStoreFromBuffer,
+stageBlobObject,
+createBlobObject,
+commitBlobObject,
+pushBlobObject,
+} from "../engine/hash-and-store";
 
 
 async function isPathStaged(cwd: string, targetPath: string, expectedHash: string): Promise<boolean> {
@@ -107,12 +115,12 @@ suite("Is Blob object staged", () => {
 
     const worktreeRoot=path.join(repoPath,'.trace-worktree');
     const text = "hello trace-pilot\nline2\n";
-    hash = await engine.createBlobObject(worktreeRoot, text);
+    hash = await createBlobObject(worktreeRoot, text);
 
     assert.ok(/^[0-9a-f]{40}$/.test(hash), `hash looks invalid: ${hash}`);
 
     const targetPath = `blobs/${hash}.bin`;
-    await engine.stageBlobObject(worktreeRoot, hash,text);
+    await stageBlobObject(worktreeRoot, hash,text);
 
     const staged = await isPathStaged(worktreeRoot, targetPath, hash);
     assert.ok(staged, `expected ${targetPath} to be staged with hash ${hash}`);
@@ -121,16 +129,16 @@ suite("Is Blob object staged", () => {
   // コミットされたか
   test("commit contains the staged blobs/<hash>.bin entry", async () => {
     const text = `commit-test-${Date.now()}`;
-    const hash2 = await engine.createBlobObject(worktreeRoot, text);
+    const hash2 = await createBlobObject(worktreeRoot, text);
     const targetPath = `blobs/${hash2}.bin`;
 
-    await engine.stageBlobObject(worktreeRoot, hash2,text);
+    await stageBlobObject(worktreeRoot, hash2,text);
 
     // stagedがあることを念押しチェック（これがあると原因切り分けも楽）
     const cached = await execGit(["diff", "--cached", "--name-status"], worktreeRoot);
     assert.ok(cached.stdout.includes(targetPath), `not staged:\n${cached.stdout}`);
 
-    await engine.commitBlobObject(worktreeRoot);
+    await commitBlobObject(worktreeRoot);
 
     const { stdout } = await execGit(["ls-tree", "-r", "HEAD", "--", targetPath], worktreeRoot);
     assert.ok(stdout.includes(hash2), `expected HEAD tree to include ${hash2}, got: ${stdout}`);
@@ -173,7 +181,7 @@ suite("Is metadata stored correctly",function (){
   test("Is metadata stored",async()=>{
     text=`test - -${Date.now()}`;
 
-    const originalHash=await engine.calculateHashAndStore(text);
+    const originalHash=await calculateHashAndStore(text);
 
     const meta:Metadata={
       originalHash: originalHash,
@@ -186,7 +194,7 @@ suite("Is metadata stored correctly",function (){
     };
 
     const metaJSON=JSON.stringify(meta);
-    const metaHash=await engine.calculateHashAndStore(metaJSON);
+    const metaHash=await calculateHashAndStore(metaJSON);
 
     restoredMeta=await catFileJSON(metaHash,worktreeRoot);
 

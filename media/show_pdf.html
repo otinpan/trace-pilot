@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+       content="
+         default-src 'none';
+         img-src {{cspSource}} blob: data:;
+         style-src {{cspSource}} 'unsafe-inline';
+         script-src {{cspSource}} 'nonce-{{nonce}}';
+         connect-src {{cspSource}};
+         worker-src {{cspSource}} blob:;
+       ">
+  <style>
+    html, body { margin: 0; height: 100%; }
+    canvas { display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <script nonce="{{nonce}}" type="module">
+    import * as pdfjsLib from "{{pdfJsUri}}";
+
+    // worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "{{pdfJsWorkerUri}}";
+
+    const pdf = await pdfjsLib.getDocument({ url: "{{pdfUri}}" }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+  </script>
+</body>
+</html>

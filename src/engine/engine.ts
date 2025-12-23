@@ -4,6 +4,7 @@ import{
     commands,
     TextEditor,
     TextEditorEdit,
+    Uri,
     Range,
     Position,
     window,
@@ -15,18 +16,20 @@ import{
 } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
-import * as cp from 'child_process';
-import {Metadata, WEB_INFO_SOURCE} from '../constants/types';
+import {Metadata, VSCodeCopyMedia, WEB_INFO_SOURCE} from '../constants/types';
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
 import { ensureWorktree } from '../repository/worktree';
 import { json, text } from 'stream/consumers';
-import {execGit} from "../common";
+import {execGit,getActiveUri} from "../common";
 import { fstat } from 'fs';
 import { toEditorSettings } from 'typescript';
+import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-and-store';
+import { setEngine } from 'crypto';
+import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf } from './show-information';
 
 export class TraceEngine{
-    private highlightDeco?: TextEditorDecorationType;
+    public highlightDeco?: TextEditorDecorationType;
     constructor(
         private readonly context: ExtensionContext
     ){
@@ -34,46 +37,78 @@ export class TraceEngine{
     };
 
     async VSCodeCopy(): Promise<boolean>{
-        const editor=window.activeTextEditor;
-        if(!editor){
-            window.showInformationMessage("error: window is invalid");
+        // ctr+cを行う
+        await commands.executeCommand("editor.action.clipboardCopyAction");
+
+        const uri=getActiveUri();
+
+        if(!uri){
+            window.showErrorMessage("error: no active tab");
             return false;
         }
 
-        // 選択した範囲のtext
-        const copiedText:string=editor.document.getText(editor.selection);
+
+        const editor=window.activeTextEditor;
+
+        let copiedText:string=await env.clipboard.readText();
         if(!copiedText){
-            window.showInformationMessage("error: select no contents");
+            window.showErrorMessage("error: select no contents");
             return false;
         }
+        // pdfかどうか
+        const isPdf = this.checkIsPdfOpen(uri);
 
         // 全文のテキスト
-        const fullText:string=editor.document.getText();
+        let fullText:string|Buffer|null;
+        if(isPdf===null){
+            fullText="";
+        }else if(isPdf){
+            fullText=await this.getPdfAsBuffer(uri);
+        }else{
+            if(editor){
+                fullText=editor.document.getText();
+            }else{
+                fullText="";
+            } 
+        }
 
         try{
             // 選択範囲テキストの保存、ハッシュ値
-            const originalHash=await this.calculateHashAndStore(copiedText);
+            const originalHash=await calculateHashAndStore(copiedText);
 
             // 全文保存
-            const fullTextHash=await this.calculateHashAndStore(fullText);
+            let fullTextHash:string;
+            let isTextMedia:boolean;
+
+            if(typeof fullText==="string"){ //text
+                isTextMedia=true;
+                fullTextHash=await calculateHashAndStore(fullText);
+            }else if(Buffer.isBuffer(fullText)){ // pdf
+                isTextMedia=false;
+                fullTextHash=await calculateHashAndStoreFromBuffer(fullText);
+            }else{
+                throw new Error("fullText is null");
+            }
+
             
             const meta: Metadata={
                 originalHash: originalHash,
                 fullTextHash: fullTextHash,
-                url: editor.document.uri.toString(true),
+                url: uri.toString(),
                 type: WEB_INFO_SOURCE.VSCODE,
                 timeCopied: new Date().toISOString(),
                 timeCopiedNumber: Date.now(),
-                additionalMetaData: null,
+                additionalMetaData: {
+                    isText:isTextMedia,
+                }
             };
 
             // メタデータの保存、ハッシュ値
             const metaJSON=JSON.stringify(meta);
 
             // windowに表示
-            const metaHash=await this.calculateHashAndStore(metaJSON);
+            const metaHash=await calculateHashAndStore(metaJSON);
 
-            window.showInformationMessage(metaHash);
             // 元のテキストとハッシュ値をクリップボードに書き込む
             const marker=`// @trace-pilot ${metaHash}`;
             const clipboardText=`${marker}\n${copiedText}`;
@@ -87,117 +122,22 @@ export class TraceEngine{
         }
     };
 
-    async calculateHashAndStore(_copied_text: string): Promise<string>{
-        const repoPath=await getRepositoryPathOrNull();
-	    if(!repoPath){
-	    	throw new Error("Not a git repository. Open a folder that has .git (or init first).");
-        }
-        
+    
+    // 現在開かれているファイルがpdfか
+    checkIsPdfOpen(uri: Uri):boolean | null{
+        const isPdf=uri.scheme==='file'&&
+        uri.fsPath.toLowerCase().endsWith('.pdf');
 
-        // worktreeの作成
-        await ensureWorktree(repoPath);
-
-        // ブランチの移動
-        const worktreePath=path.join(repoPath,'.trace-worktree');
-
-        // コマンドの実行
-        // blobオブジェクトの作成
-        let hash=await this.createBlobObject(worktreePath,_copied_text);
-        // stage
-        await this.stageBlobObject(worktreePath,hash,_copied_text);
-        // commit
-        await this.commitBlobObject(worktreePath);
-        // push
-        //await this.pushBlobObject(worktreePath);
-
-        return hash;
+        return isPdf;
     }
 
-    async createBlobObject(worktreePath:string,text:string):Promise<string>{
-        return new Promise((resolve,reject)=>{
-            const git=cp.spawn("git",["hash-object","--stdin"],{cwd:worktreePath});
-
-            let stdout="";
-            let stderr="";
-
-            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
-            git.stderr?.on("data",(d)=>(stderr+=d.toString("utf8")));
-
-            git.on('error',(err)=>{
-                reject(err);
-            });
-
-            // 子プロセスが終了
-            git.on('close',(code)=>{
-                // 成功
-                if(code===0){
-                    resolve(stdout.trim());
-                }else{
-                    reject(new Error(`git hash-object exited with code ${code}: ${stderr}`));
-                }
-            });
-        
-            // text書き込み
-            git.stdin.write(text,'utf8');
-            git.stdin.end();
-
-        });
+    // pdfをバイナリ化
+    async getPdfAsBuffer(uri:Uri):Promise<Buffer>{
+        const bytes=await workspace.fs.readFile(uri);
+        return Buffer.from(bytes);
     }
 
-    async stageBlobObject(worktreePath:string,hash:string,text:string){
-        const dir=path.join(worktreePath,"blobs");
-        fs.mkdirSync(dir,{recursive:true});
-        fs.writeFileSync(path.join(dir,`${hash}.bin`),text,"utf8");
-
-        await execGit(["add","-f",`blobs/${hash}.bin`],worktreePath);
-    }
-
-    async commitBlobObject(worktreePath:string){
-        return new Promise((resolve,reject)=>{
-            const git=cp.spawn(
-                "git",
-                ["commit","-m","store copied content"],
-                {cwd:worktreePath}
-            );
-
-            let stdout="";
-            let stderr="";
-
-            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
-            git.stderr?.on("data", (d) => (stderr += d.toString("utf8")));
-
-            git.on("error",reject);
-
-            git.on("close", (code) => {
-                if (code === 0) resolve(stdout.trim());
-                else reject(new Error(`git commit exited with code ${code}: ${stderr || stdout}`));
-            });
-
-        });
-    }
-
-    async pushBlobObject(worktreePath:string){
-        return new Promise((resolve,reject)=>{
-            const git=cp.spawn(
-                "git",
-                ["push","origin","trace-store"],
-                {cwd:worktreePath}
-            );
-            let stdout="";
-            let stderr="";
-
-            git.stdout?.on("data",(d)=>(stdout+=d.toString("utf8")));
-            git.stderr?.on("data", (d) => (stderr += d.toString("utf8")));
-
-            git.on("error",reject);
-
-            git.on("close", (code) => {
-                if (code === 0) resolve(stdout.trim());
-                else reject(new Error(`git push exited with code ${code}: ${stderr || stdout}`));
-            });
-        });
-    }
-
+   
     async VSCodePaste(): Promise<boolean>{
         return true;
     }
@@ -209,78 +149,38 @@ export class TraceEngine{
     async VSCodeShowInformation(metaHash:string):Promise<boolean>{
         try{
             const metaJSON=await this.restoreTextByHash(metaHash);
+
+            window.showInformationMessage(metaJSON);
+
             const metaData=JSON.parse(metaJSON) as Metadata;
+            const add=metaData.additionalMetaData;
+            let isText:boolean=true;
+            if(add && typeof add==="object"){
+                if("isText" in add){
+                    isText=(add as VSCodeCopyMedia).isText;
+                }
+            }
 
-            const fullText=await this.restoreTextByHash(metaData.fullTextHash);
-            const copiedText=await this.restoreTextByHash(metaData.originalHash);
+            if(isText){
+                const fullText=await this.restoreTextByHash(metaData.fullTextHash);
+                const copiedText=await this.restoreTextByHash(metaData.originalHash);
 
-            await this.showFullTextAndHighlight(fullText,copiedText);
+                await showFullTextAndHighlightText(fullText,copiedText,this);
+                return true;
+            }else{
+                const copiedText=await this.restoreTextByHash(metaData.originalHash);
+                const uri=metaData.url;
+                const repoPath= await getRepositoryPathOrNull();
+                if(!repoPath){
+                    throw new Error("Not a git repository. Open a folder that has .git (or init first).");
+                }
 
-            return true;
+                await showFullPdfAndHighligtPdf(repoPath,metaData.fullTextHash,copiedText,this.context);
+                return true;
+            }
         }catch(e:any){
             window.showErrorMessage(`failed to open meta: ${e?.message ?? e}`);
             return false;
-        }
-    }
-
-    // full textからneedleを見つけてRangeを返す
-    findAllRanges(fullText: string, needle: string): Range[] {
-        if (!needle) return [];
-
-        const ranges: Range[] = [];
-        let idx = 0;
-
-        while (true) {
-          const hit = fullText.indexOf(needle, idx);
-          if (hit === -1) break;
-        
-          const start = this.offsetToPosition(fullText, hit);
-          const end = this.offsetToPosition(fullText, hit + needle.length);
-          ranges.push(new Range(start, end));
-        
-          // 同じ場所で無限ループしないように進める（needleが空でない前提）
-          idx = hit + Math.max(1, needle.length);
-        }
-        return ranges;
-    }
-    // 文字オフセットを（行、列）に直す
-    offsetToPosition(text: string, offset: number): Position {
-        const before = text.slice(0, offset);
-        const lines = before.split("\n");
-        const line = lines.length - 1;
-        const character = lines[lines.length - 1].length;
-        return new Position(line, character);
-    }
-
-    // 全文の表示
-    async showFullTextAndHighlight(fullText: string,copiedText: string){
-        const doc=await workspace.openTextDocument({
-            content: fullText,
-            language: "plaintext",
-        });
-
-        const editor=await window.showTextDocument(doc,{preview:false});
-
-        this.highlightDeco?.dispose();
-        this.highlightDeco=window.createTextEditorDecorationType({
-            backgroundColor: "rgba(255, 230, 0, 0.35)",
-            border: "1px solid rgba(255, 230, 0, 0.8)",
-            isWholeLine: false,
-        });
-
-        const ranges=this.findAllRanges(fullText,copiedText);
-        const decorations: DecorationOptions[] = ranges.map((range) => ({
-            range,
-            hoverMessage: "Copied text",
-        }));
-
-        editor.setDecorations(this.highlightDeco,decorations);
-
-        // 見つかったら最初の一致箇所にジャンプ
-        if(ranges.length>0){
-            editor.revealRange(ranges[0],1);
-        }else{
-            window.showInformationMessage("Could not find copied text in full text");
         }
     }
 

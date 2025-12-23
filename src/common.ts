@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import path from 'path';
 import { error } from 'console';
+import * as vscode from 'vscode';
 
 export class CopiedContent{
 	copied_text:string;
@@ -62,4 +63,20 @@ export function execGit(args: string[], cwd: string): Promise<{ stdout: string; 
       else reject(new Error(`git ${args.join(" ")} failed (${code}): ${stderr || stdout}`));
     });
   });
+}
+
+
+export function getActiveUri(): vscode.Uri|null{
+	const editor=vscode.window.activeTextEditor;
+	if(editor)return editor.document.uri;
+
+	const tab=vscode.window.tabGroups.activeTabGroup.activeTab;
+	const input=tab?.input;
+	if(!input)return null;
+
+	if(input instanceof vscode.TabInputText) return input.uri;
+	if(input instanceof vscode.TabInputCustom)return input.uri;
+	if (input instanceof vscode.TabInputWebview) return null;
+
+	return null;
 }
