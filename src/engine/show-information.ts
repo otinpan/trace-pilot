@@ -143,6 +143,7 @@ export async function showFullPdfAndHighligtPdf(
         throw new Error(`PDF not restored: ${srcPdfPath}`);
     }
 
+    //webview
     const panel=window.createWebviewPanel(
         "tracePilotPdf",
         `Trace-Pilot PDF: ${hash.slice(0,8)}`,
@@ -167,6 +168,7 @@ export async function showFullPdfAndHighligtPdf(
     // readyを受け取ったらfindを送り返す -> 検索、ハイライト
     const disp=panel.webview.onDidReceiveMessage((msg)=>{
         if(msg?.type==="ready"){
+            console.log(`send message: find ${normNeedle}`);
             panel.webview.postMessage({type:"find",needle:normNeedle});
         }
     });
@@ -174,7 +176,7 @@ export async function showFullPdfAndHighligtPdf(
     context.subscriptions.push(disp);
 }
 
-
+// 毎回ランダムなキーを作成
 function getNonce(): string {
   const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let text = "";
@@ -194,14 +196,10 @@ function webviewContent(extensionPath: string, srcPdfPath: string, webview: Webv
   const pdfJsPath = path.join(extensionPath, "media", "pdfjs", "pdf.mjs");
   const pdfWorkerPath = path.join(extensionPath, "media", "pdfjs", "pdf.worker.mjs");
   const htmlPath = path.join(extensionPath, "media", "show_pdf.html");
-  const pdfViewerJsPath = path.join(extensionPath, "media", "pdfjs", "web", "pdf_viewer.js");
-  const pdfViewerCssPath = path.join(extensionPath, "media", "pdfjs", "web", "pdf_viewer.css");
 
   const pdfJsUri = webview.asWebviewUri(Uri.file(pdfJsPath));
   const pdfJsWorkerUri = webview.asWebviewUri(Uri.file(pdfWorkerPath));
   const pdfUri = webview.asWebviewUri(Uri.file(srcPdfPath));
-  const pdfViewerJsUri = webview.asWebviewUri(Uri.file(pdfViewerJsPath));
-  const pdfViewerCssUri = webview.asWebviewUri(Uri.file(pdfViewerCssPath));
 
   const nonce = getNonce();
 
@@ -210,8 +208,6 @@ function webviewContent(extensionPath: string, srcPdfPath: string, webview: Webv
   html = replaceAllToken(html, "pdfJsUri", pdfJsUri.toString());
   html = replaceAllToken(html, "pdfJsWorkerUri", pdfJsWorkerUri.toString());
   html = replaceAllToken(html, "pdfUri", pdfUri.toString());
-  html = replaceAllToken(html, "pdfViewerJsUri", pdfViewerJsUri.toString());
-  html = replaceAllToken(html, "pdfViewerCssUri", pdfViewerCssUri.toString());
   html = replaceAllToken(html, "cspSource", webview.cspSource);
   html = replaceAllToken(html, "nonce", nonce);
 

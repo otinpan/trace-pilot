@@ -134,8 +134,15 @@ export async function commitBlobObject(worktreePath:string){
         git.stderr?.on("data", (d) => (stderr += d.toString("utf8")));
         git.on("error",reject);
         git.on("close", (code) => {
-            if (code === 0) resolve(stdout.trim());
-            else reject(new Error(`git commit exited with code ${code}: ${stderr || stdout}`));
+            const msg= (stderr||stdout).toString();
+
+            // なにもコミットするものがない場合はエラーではなくスキップ
+            if(code===0)return resolve(stdout.trim());
+            if (/nothing to commit|working tree clean/i.test(msg)) {
+              return resolve("SKIP: nothing to commit");
+            }
+
+           reject(new Error(`git commit exited with code ${code}: ${msg}`));
         });
     });
 }

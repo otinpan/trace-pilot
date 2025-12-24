@@ -12,29 +12,240 @@
          worker-src {{cspSource}} blob:;
        ">
   <style>
-    html, body { margin: 0; height: 100%; }
-    canvas { display: block; margin: 0 auto; }
+    html, body { 
+      margin: 0;
+      height: 100%;
+      overflow: auto;
+    }
+    #toolbar{
+      position: fixed;
+      top:0;
+      left:0;
+      right:0;
+      z-index:9999;
+      background: white;
+      padding: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid #ddd;
+    }
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 56px 0 16px; /* toolbar分の余白 */
+    }
+    canvas { 
+      display: block; 
+      max-width: none;
+      height: auto;
+    }
   </style>
 </head>
+
 <body>
-  <canvas id="c"></canvas>
+  <div id="toolbar">
+    <button id="zoomOut">-</button>
+    <span id="zoomLabel"></span>
+    <button id="zoomIn">+</button>
+  </div>
+
+  <div id="container"></div>
 
   <script nonce="{{nonce}}" type="module">
-    import * as pdfjsLib from "{{pdfJsUri}}";
+    // VSCode API（module内で作るのが安全）
+    const vscode = acquireVsCodeApi();
 
-    // worker
+    import * as pdfjsLib from "{{pdfJsUri}}";
     pdfjsLib.GlobalWorkerOptions.workerSrc = "{{pdfJsWorkerUri}}";
 
-    const pdf = await pdfjsLib.getDocument({ url: "{{pdfUri}}" }).promise;
-    const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 1.5 });
+    const container = document.getElementById("container");
+    const zoomLabel = document.getElementById("zoomLabel");
 
-    const canvas = document.getElementById("c");
-    const ctx = canvas.getContext("2d");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    let pdf = null;
+    let scale = 1.0;
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    let jumped=false;
+
+    // findで受け取った検索語
+    let needle = "";
+
+    // pageNum -> { canvas, viewport, page } を保持（再描画やfindで使う）
+    const pageCache = new Map();
+
+    function setZoomLabel() {
+      zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+    }
+
+    async function renderPage(pageNum) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
+
+      let entry = pageCache.get(pageNum);
+      let canvas;
+
+      if (!entry) {
+        canvas = document.createElement("canvas");
+        container.appendChild(canvas);
+        entry = { canvas, viewport, page };
+        pageCache.set(pageNum, entry);
+      } else {
+        canvas = entry.canvas;
+        entry.viewport = viewport;
+        entry.page = page;
+      }
+
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      const ctx = canvas.getContext("2d");
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      // ハイライトを上塗り
+      await drawHighlights(pageNum, page, viewport, ctx, canvas);
+    }
+
+
+    async function drawHighlights(pageNum, page, viewport, ctx, canvas) {
+      const q = (needle ?? "").toString();
+      if (!q.trim()) return;
+
+      // normalizeWhitespace を有効にすると item.str 自体に空白が混ざる場合がある
+      // "LLM", " ", "生成コード" ...
+      const tc = await page.getTextContent({ normalizeWhitespace: true });
+
+      // 1) 全文を作りつつ、各 item の [start,end) を記録
+      // { str: " ",        transform: it1.transform, width: it1.width ?? 0 },
+      const items = tc.items.map(it => ({
+        str: (it.str ?? "").toString(),
+        transform: it.transform,
+        width: it.width ?? 0,
+      }));
+    
+      const ranges = []; // { start, end }
+      let fullText = "";
+      for (const it of items) {
+        const start = fullText.length;
+        fullText += it.str;
+        const end = fullText.length;
+        ranges.push({ start, end });
+      }
+    
+      // 2) 全マッチ位置を列挙 fullTextからneedleを検索
+      // {start: 2, end: 7}
+      const matches = [];
+      let pos = 0;
+      while (true) {
+        const hit = fullText.indexOf(q, pos); // pos以降からneedleを探す
+        if (hit === -1) break;
+        matches.push({start: hit, end: hit+q.length});
+        pos = hit + Math.max(1, q.length);
+      }
+      if (matches.length === 0) return;
+    
+      // 3) マッチと重なる item を矩形化して塗る
+      const rects = [];
+      for (const m of matches) {
+        for (let i = 0; i < items.length; i++) {
+          const r = ranges[i];
+          // overlap 判定
+          if (r.end <= m.start || m.end <= r.start) continue;
+
+          // 
+        
+          const it = items[i];
+        
+          // item.transform は「テキスト空間→ページ空間」なので viewport.transform と合成
+          const t = pdfjsLib.Util.transform(viewport.transform, it.transform);
+          const x = t[4];
+          const y = t[5];
+          const h = Math.hypot(t[2], t[3]);          // 文字高さ
+          const w = it.width * scale;                // 文字幅（概算、ただし十分実用的）
+        
+          rects.push({ x, y: y - h, w, h });
+        }
+      }
+    
+      if (rects.length === 0) return;
+    
+      // 最初のヒットへスクロール（ページ内）
+      if (!jumped) {
+        jumped = true;
+        canvas.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    
+      // 描画
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = "yellow";
+      for (const r of rects) {
+        if (r.w > 0 && r.h > 0) ctx.fillRect(r.x, r.y, r.w, r.h);
+      }
+      ctx.restore();
+    }
+
+
+    async function renderAll() {
+      if (!pdf) return;
+      container.innerHTML = "";
+      pageCache.clear();
+      setZoomLabel();
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        await renderPage(pageNum);
+      }
+    }
+
+    async function rerenderAllPagesKeepingCanvas() {
+      if (!pdf) return;
+      setZoomLabel();
+
+      // containerは保持しつつ、各ページだけ再描画
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        // 既存canvasがあれば使う
+        let entry = pageCache.get(pageNum);
+        if (!entry) {
+          // 初回 or renderAllしてない場合
+          await renderPage(pageNum);
+        } else {
+          // canvasはそのまま、サイズ・描画を更新
+          await renderPage(pageNum);
+        }
+      }
+    }
+
+    // ズーム
+    document.getElementById("zoomIn").addEventListener("click", async () => {
+      scale = Math.min(scale + 0.25, 4.0);
+      await rerenderAllPagesKeepingCanvas();
+    });
+    document.getElementById("zoomOut").addEventListener("click", async () => {
+      scale = Math.max(scale - 0.25, 0.5);
+      await rerenderAllPagesKeepingCanvas();
+    });
+
+    // 拡張機能からのメッセージを受け取る
+    window.addEventListener("message", async (event) => {
+      const msg = event.data;
+      if (!msg) return;
+
+      if (msg.type === "find") {
+        console.log(`receive message: ${msg.needle}`);
+        needle = (msg.needle ?? "").toString();
+        jumped=false;
+        // findが来たらハイライト反映（再描画）
+        await rerenderAllPagesKeepingCanvas();
+      }
+    });
+
+    // PDFロード
+    pdf = await pdfjsLib.getDocument({ url: "{{pdfUri}}" }).promise;
+    await renderAll();
+
+    // webviewへ通知
+    vscode.postMessage({ type: "ready" });
   </script>
 </body>
 </html>
