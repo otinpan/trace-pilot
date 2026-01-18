@@ -16,7 +16,15 @@ import{
 } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
-import {Metadata, VSCodeCopyMedia, WEB_INFO_SOURCE} from '../constants/types';
+import {
+    Metadata,
+    WEB_INFO_SOURCE,
+    AdditionalHash,
+    VSCodeMetadata,
+    VSCodeHash,
+    ChromePDFMetadata,
+    ChromePDFHash,
+} from '../constants/types';
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
 import { ensureWorktree } from '../repository/worktree';
@@ -93,14 +101,16 @@ export class TraceEngine{
             
             const meta: Metadata={
                 originalHash: originalHash,
-                fullTextHash: fullTextHash,
+                additionalHash:{
+                    fullTextHash:fullTextHash,
+                },
                 url: uri.toString(),
                 type: WEB_INFO_SOURCE.VSCODE,
                 timeCopied: new Date().toISOString(),
                 timeCopiedNumber: Date.now(),
                 additionalMetaData: {
                     isText:isTextMedia,
-                }
+                },
             };
 
             // メタデータの保存、ハッシュ値
@@ -153,31 +163,67 @@ export class TraceEngine{
             window.showInformationMessage(metaJSON);
 
             const metaData=JSON.parse(metaJSON) as Metadata;
+            const ah=metaData.additionalHash;
             const add=metaData.additionalMetaData;
-            let isText:boolean=true;
-            if(add && typeof add==="object"){
-                if("isText" in add){
-                    isText=(add as VSCodeCopyMedia).isText;
+            switch(metaData.type){
+            case WEB_INFO_SOURCE.VSCODE:{
+                if(!ah||typeof ah!=="object"||!("fullTextHash" in ah)){
+                    throw new Error("fullTextHash is not available for this metadata");
+                }
+                const fullTextHash = (ah as VSCodeHash).fullTextHash;
+                const isText=
+                    !!add&&typeof add==="object" && "isText" in add
+                        ? (add as VSCodeMetadata).isText
+                        :true;
+                if(isText){
+                    const fullText=await this.restoreTextByHash(fullTextHash);
+                    const copiedText=await this.restoreTextByHash(metaData.originalHash);
+
+                    await showFullTextAndHighlightText(fullText,copiedText,this);
+                    return true;
+                }else{
+                    const copiedText=await this.restoreTextByHash(metaData.originalHash);
+                    const uri=metaData.url;
+                    const repoPath= await getRepositoryPathOrNull();
+                    if(!repoPath){
+                        throw new Error("Not a git repository. Open a folder that has .git (or init first).");
+                    }
+
+                    await showFullPdfAndHighligtPdf(repoPath,fullTextHash,copiedText,this.context);
+                    return true;    
+                }
+                break;
+            }
+            case WEB_INFO_SOURCE.CHROME_PDF:{
+                if(!ah||typeof ah!=="object"||!("fullTextHash" in ah)){
+                    throw new Error("fullTextHash is not available for this metadata");
+                }
+                const fullTextHash = (ah as VSCodeHash).fullTextHash;
+                const isText=
+                    !!add&&typeof add==="object" && "isText" in add
+                        ? (add as VSCodeMetadata).isText
+                        :true;
+                if(isText){
+                    const fullText=await this.restoreTextByHash(fullTextHash);
+                    const copiedText=await this.restoreTextByHash(metaData.originalHash);
+
+                    await showFullTextAndHighlightText(fullText,copiedText,this);
+                    return true;
+                }else{
+                    const copiedText=await this.restoreTextByHash(metaData.originalHash);
+                    const uri=metaData.url;
+                    const repoPath= await getRepositoryPathOrNull();
+                    if(!repoPath){
+                        throw new Error("Not a git repository. Open a folder that has .git (or init first).");
+                    }
+
+                    await showFullPdfAndHighligtPdf(repoPath,fullTextHash,copiedText,this.context);
+                    return true;    
                 }
             }
-
-            if(isText){
-                const fullText=await this.restoreTextByHash(metaData.fullTextHash);
-                const copiedText=await this.restoreTextByHash(metaData.originalHash);
-
-                await showFullTextAndHighlightText(fullText,copiedText,this);
-                return true;
-            }else{
-                const copiedText=await this.restoreTextByHash(metaData.originalHash);
-                const uri=metaData.url;
-                const repoPath= await getRepositoryPathOrNull();
-                if(!repoPath){
-                    throw new Error("Not a git repository. Open a folder that has .git (or init first).");
-                }
-
-                await showFullPdfAndHighligtPdf(repoPath,metaData.fullTextHash,copiedText,this.context);
-                return true;
-            }
+            default:
+                throw new Error(`Unsupported meta type:" ${metaData.type}`);
+            }  
         }catch(e:any){
             window.showErrorMessage(`failed to open meta: ${e?.message ?? e}`);
             return false;

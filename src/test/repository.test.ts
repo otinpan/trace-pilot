@@ -183,16 +183,19 @@ suite("Is metadata stored correctly",function (){
 
     const originalHash=await calculateHashAndStore(text);
 
-    const meta:Metadata={
-      originalHash: originalHash,
-      fullTextHash: "fulltext",
-      url: "../test/test/test.text",
-      type: WEB_INFO_SOURCE.VSCODE,
-      timeCopied: new Date().toISOString(),
-      timeCopiedNumber: Date.now(),
-      additionalMetaData: null,
-    };
-
+    const meta: Metadata={
+               originalHash: originalHash,
+               additionalHash:{
+                   fullTextHash:"fulltexthash",
+               },
+               url: "vscode/test",
+               type: WEB_INFO_SOURCE.VSCODE,
+               timeCopied: new Date().toISOString(),
+               timeCopiedNumber: Date.now(),
+               additionalMetaData: {
+                   isText:true,
+               },
+           };
     const metaJSON=JSON.stringify(meta);
     const metaHash=await calculateHashAndStore(metaJSON);
 

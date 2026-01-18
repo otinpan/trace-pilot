@@ -21,7 +21,6 @@ import * as path from 'path';
 import {logStore} from './logger';
 import {Container} from './container';
 import {getRepositoryPath, getRepositoryPathOrNull} from './repository/repository';
-import * as index_repository from './repository/index-repository';
 import { markAsUntransferable } from 'worker_threads';
 import {MetaData,CopiedContent,TraceMetaEntry} from './common';
 

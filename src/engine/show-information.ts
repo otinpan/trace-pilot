@@ -20,7 +20,6 @@ import { fstat, openSync } from 'fs';;
 import * as os from "os";
 import * as fs from "fs";
 import { ResolveFnOutput } from 'module';
-import { VSCodeCopyMedia } from '../constants/types';
 
 // full textからneedleを見つけてRangeを返す
 export function findAllRanges(fullText: string, needle: string): Range[] {

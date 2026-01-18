@@ -2,13 +2,14 @@ import * as ts from 'typescript';
 
 export enum WEB_INFO_SOURCE{
     CHAT_GPT="CHAT_GPT",
+    CHROME_PDF="CHROME_PDF",
     VSCODE="VSCODE",
     OTHER="OTHER"
 }
 
 export interface Metadata{
     originalHash: string;
-    fullTextHash: string,
+    additionalHash: AdditionalHash;
     url: string;
     type: WEB_INFO_SOURCE;
     timeCopied: string;
@@ -16,14 +17,43 @@ export interface Metadata{
     additionalMetaData: AdditionalMetadata;
 }
 
-export type AdditionalMetadata=
-| ChatGptCopyBuffer
-| VSCodeCopyMedia
+export type AdditionalHash=
+| VSCodeHash
+| ChromePDFHash
+| GPTHash
 | null;
 
-export interface VSCodeCopyMedia{
+export interface VSCodeHash{
+    fullTextHash:string;
+}
+
+export interface ChromePDFHash{
+    fullTextHash: string;
+}
+
+export interface GPTHash{
+    promptHash: string;
+    generatedHash: string;
+}
+
+export type AdditionalMetadata=
+| GPTMetadata
+| VSCodeMetadata
+| ChromePDFMetadata
+| null;
+
+export interface GPTMetadata{
     isText: boolean;
 }
+
+export interface VSCodeMetadata{
+    isText:boolean;
+}
+
+export interface ChromePDFMetadata{
+    isText:boolean;
+}
+
 export interface ChatGptCopyBuffer{ 
     messageCopied: ThreadPair;
 }
