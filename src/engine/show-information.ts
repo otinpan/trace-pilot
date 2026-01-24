@@ -12,6 +12,7 @@ import {
     Webview,
     TaskPanelKind,
 } from 'vscode';
+
 import { TraceEngine } from "./engine";
 import { ensureWorktree } from '../repository/worktree';
 import * as cp from "child_process";
@@ -20,6 +21,8 @@ import { fstat, openSync } from 'fs';;
 import * as os from "os";
 import * as fs from "fs";
 import { ResolveFnOutput } from 'module';
+import { MetaData } from '../common';
+import MarkdownIt from "markdown-it";
 
 // full textからneedleを見つけてRangeを返す
 export function findAllRanges(fullText: string, needle: string): Range[] {
@@ -108,7 +111,7 @@ async function storePdfFromHash(repoPath:string,hash:string):Promise<string>{
     // pdfバイナリ
     try{
         const pdfBytes=await gitCatFileBlobBytes(worktreePath,hash);
-        // 現在開いているフォルダに一時的ディレクトリに保存
+        // 現在開いているフォルダの一時的ディレクトリに保存
         const tmpdir=path.join(os.tmpdir(),"trace-pilot");
         fs.mkdirSync(tmpdir,{recursive:true});
         const pdfPath=path.join(tmpdir,`${hash}.pdf`);
@@ -161,7 +164,7 @@ export async function showFullPdfAndHighligtPdf(
     };
 
 
-    panel.webview.html=webviewContent(context.extensionUri.fsPath,srcPdfPath,panel.webview);
+    panel.webview.html=webviewContentPDF(context.extensionUri.fsPath,srcPdfPath,panel.webview);
 
 
     // readyを受け取ったらfindを送り返す -> 検索、ハイライト
@@ -191,32 +194,112 @@ function replaceAllToken(html: string, key: string, value: string): string {
   return html.replace(re, value);
 }
 
-function webviewContent(extensionPath: string, srcPdfPath: string, webview: Webview): string {
-  const pdfJsPath = path.join(extensionPath, "media", "pdfjs", "pdf.mjs");
-  const pdfWorkerPath = path.join(extensionPath, "media", "pdfjs", "pdf.worker.mjs");
-  const htmlPath = path.join(extensionPath, "media", "show_pdf.html");
 
-  const pdfJsUri = webview.asWebviewUri(Uri.file(pdfJsPath));
-  const pdfJsWorkerUri = webview.asWebviewUri(Uri.file(pdfWorkerPath));
-  const pdfUri = webview.asWebviewUri(Uri.file(srcPdfPath));
-
-  const nonce = getNonce();
-
-  let html = fs.readFileSync(htmlPath, "utf8");
-
-  html = replaceAllToken(html, "pdfJsUri", pdfJsUri.toString());
-  html = replaceAllToken(html, "pdfJsWorkerUri", pdfJsWorkerUri.toString());
-  html = replaceAllToken(html, "pdfUri", pdfUri.toString());
-  html = replaceAllToken(html, "cspSource", webview.cspSource);
-  html = replaceAllToken(html, "nonce", nonce);
-
-  // 置換漏れがあると必ず事故るので検出
-  const leftovers = html.match(/\{\{\s*\w+\s*\}\}/g);
-  if (leftovers) {
-    console.error("Unreplaced template tokens remain:", leftovers);
-  }
-
-  return html;
+// html設定 panel.webview.html=webviewContentPDF(context.extensionUri.fsPath,srcPdfPath,panel.webview);
+function webviewContentPDF(extensionPath: string, srcPdfPath: string, webview: Webview): string {
+    const pdfJsPath = path.join(extensionPath, "media", "pdfjs", "pdf.mjs");
+    const pdfWorkerPath = path.join(extensionPath, "media", "pdfjs", "pdf.worker.mjs");
+    const htmlPath = path.join(extensionPath, "media", "show_pdf.html");
+    const pdfJsUri = webview.asWebviewUri(Uri.file(pdfJsPath));
+    const pdfJsWorkerUri = webview.asWebviewUri(Uri.file(pdfWorkerPath));
+    const pdfUri = webview.asWebviewUri(Uri.file(srcPdfPath));
+    const nonce = getNonce();
+    let html = fs.readFileSync(htmlPath, "utf8");
+    html = replaceAllToken(html, "pdfJsUri", pdfJsUri.toString());
+    html = replaceAllToken(html, "pdfJsWorkerUri", pdfJsWorkerUri.toString());
+    html = replaceAllToken(html, "pdfUri", pdfUri.toString());
+    html = replaceAllToken(html, "cspSource", webview.cspSource);
+    html = replaceAllToken(html, "nonce", nonce);
+    // 置換漏れがあると必ず事故るので検出
+    const leftovers = html.match(/\{\{\s*\w+\s*\}\}/g);
+    if (leftovers) {
+          console.error("Unreplaced template tokens remain:", leftovers);
+    }
+    
+    return html;
 }
 
 
+
+// markdown /////////////////////////////////////////////////////////////////////
+const md = new MarkdownIt({
+    html: false,
+    linkify: true,
+    breaks: true,
+});
+
+
+export async function showFullMdAndHighlightMd(
+    hash: string,
+    copiedText: string,
+    promptText: string,
+    generatedText: string,
+    context: ExtensionContext,
+)
+:Promise<void>{
+    const panel=window.createWebviewPanel(
+        "tracePilotMarkdown",
+        `Trace-Pilot Markdown: ${hash.slice(0,8)}`,
+        ViewColumn.Active,
+    );
+
+    panel.webview.options={
+        enableScripts:true,
+        localResourceRoots:[
+            Uri.file(path.join(os.tmpdir(),"trace-pilot")),
+            Uri.joinPath(context.extensionUri,"media"),
+        ]
+    };
+
+    panel.webview.html=webviewContentMarkdown(
+        context.extensionUri.fsPath,
+        panel.webview,
+        promptText,
+        generatedText
+    );
+
+    // 正規化
+    const normNeedle = copiedText.replace(/\r\n/g, "\n").replace(/\s+$/, ""); // 末尾の改行/空白だけ落とす
+
+    // readyを受け取ったらfindを送り返す -> 検索、ハイライト
+    const disp=panel.webview.onDidReceiveMessage((msg)=>{
+        if(msg?.type==="ready"){
+            console.log(`send message: find ${normNeedle}`);
+            panel.webview.postMessage({type:"find",needle:normNeedle});
+        }else{
+            console.log("failed to send message");
+        }
+    });
+
+    context.subscriptions.push(disp);
+}
+
+function webviewContentMarkdown(
+    extensionPath: string,
+    webview: Webview,
+    promptText:string,
+    generatedText:string,
+):string{
+    const htmlPath=path.join(extensionPath,"media","show_markdown.html");
+    const nonce=getNonce();
+
+    const promptHtml=md.render(promptText ?? "");
+    const generatedHtml=md.render(generatedText ?? "");
+
+    let html=fs.readFileSync(htmlPath,"utf8");
+    html = replaceAllToken(html, "cspSource", webview.cspSource);
+    html=replaceAllToken(html,"nonce",nonce);
+
+    // show_markdown.htmlの{{promptHtml}}をpromptHtmlに置き換える
+    html=replaceAllToken(html,"promptHtml",promptHtml);
+    html=replaceAllToken(html,"generatedHtml",generatedHtml);
+
+    // 置換漏れがあると必ず事故るので検出
+    const leftovers = html.match(/\{\{\s*\w+\s*\}\}/g);
+    if(leftovers){
+        console.error("Unreplaced template tokens remain:", leftovers);
+    }
+
+    return html;
+
+}

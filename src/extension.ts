@@ -30,6 +30,8 @@ const simbolTracePilot:string='@trace-pilot';
 export async function activate(context: ExtensionContext) {
 
 	const container=await Container.create(context);
+	console.log("[Trace-Pilot] activated");
+	window.showInformationMessage("[Trace-Pilot] activated");
 
 
 	// ペーストアイテムのクリック時に呼ばれる関数

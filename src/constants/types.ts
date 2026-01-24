@@ -54,9 +54,7 @@ export interface ChromePDFMetadata{
     isText:boolean;
 }
 
-export interface ChatGptCopyBuffer{ 
-    messageCopied: ThreadPair;
-}
+
 
 export interface ThreadPair{
     id: string;

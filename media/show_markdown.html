@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="
+      default-src 'none';
+      img-src {{cspSource}} https: data:;
+      style-src {{cspSource}} 'unsafe-inline';
+      script-src 'nonce-{{nonce}}';
+    ">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trace-Pilot Markdown</title>
+
+  <style>
+    body { padding: 16px; line-height: 1.7; }
+    .section { margin-bottom: 18px; padding: 12px; border: 1px solid rgba(127,127,127,0.3); border-radius: 10px; }
+    .title { font-weight: 700; margin-bottom: 10px; opacity: 0.85; }
+    pre { padding: 12px; overflow: auto; border-radius: 8px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .trace-highlight {
+      background: rgba(255,230,0,0.45);
+      border: 1px solid rgba(255,230,0,0.9);
+      border-radius: 3px;
+      padding: 1px 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="section">
+    <div class="title">Prompt</div>
+    <div id="prompt">{{promptHtml}}</div>
+  </div>
+
+  <div class="section">
+    <div class="title">Generated</div>
+    <div id="generated">{{generatedHtml}}</div>
+  </div>
+
+  <script nonce="{{nonce}}">
+    const vscode = acquireVsCodeApi();
+
+    function escapeRegExp(s) {
+      return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function clearHighlights(rootEl) {
+      rootEl.querySelectorAll("mark.trace-highlight").forEach((mk) => {
+        const text = document.createTextNode(mk.textContent || "");
+        mk.replaceWith(text);
+      });
+    }
+
+   function normalizeLines(needle) {
+  return (needle ?? "")
+    .replace(/\r\n/g, "\n")
+    .trimEnd()
+    .split("\n")
+    .map((s) => s.trimEnd())
+    .filter((s) => s.length > 0);
+}
+
+    function htmlToSearchableText(html) {
+      return html
+        .replace(/<br\s*\/?>/gi, "\n")  // <br> を改行扱い
+        .replace(/<\/p>\s*<p>/gi, "\n") // 段落間も改行っぽく
+    }
+
+    function highlightElementHtml(el, needles, hits) {
+      let html = el.innerHTML;
+      let changed = false;
+    
+      // ★ 検索用には <br> を \n 扱いした文字列で test する
+      const searchable = htmlToSearchableText(html);
+    
+      for (const n of needles) {
+        // test は searchable で
+        if (!new RegExp(escapeRegExp(n), "i").test(searchable)) continue;
+      
+        // 置換は元の html に対して（ここで <br> またぎ一致はできないが、単行は当たる）
+        const re = new RegExp(escapeRegExp(n), "g");
+        if (!re.test(html)) continue;
+        html = html.replace(re, (m) => `<mark class="trace-highlight">${m}</mark>`);
+        changed = true;
+      }
+    
+      if (changed) {
+        el.innerHTML = html;
+        el.querySelectorAll("mark.trace-highlight").forEach((mk) => hits.push(mk));
+      }
+    }
+
+
+    function highlightInDom(rootEl, needle) {
+      if (!needle) return [];
+      const needles = normalizeLines(needle);
+      const hits = [];
+    
+      // 1) まずコードブロックを狙い撃ち
+      rootEl.querySelectorAll("pre code").forEach((codeEl) => {
+        highlightElementHtml(codeEl, needles, hits);
+      });
+    
+      // 2) 通常文も（必要なら）狙う：段落やリストだけ
+      rootEl.querySelectorAll("p, li, blockquote").forEach((el) => {
+        highlightElementHtml(el, needles, hits);
+      });
+    
+      return hits;
+    }
+
+
+
+    window.addEventListener("message", (ev) => {
+      const msg = ev.data;
+      if (!msg) return;
+
+      if (msg.type === "find") {
+        const needle = msg.needle || "";
+
+        const p = document.getElementById("prompt");
+        const g = document.getElementById("generated");
+        if (!p || !g) return;
+
+        clearHighlights(p);
+        clearHighlights(g);
+
+        const hitsP = highlightInDom(p, needle);
+        const hitsG = highlightInDom(g, needle);
+
+        const hits = [...hitsP, ...hitsG];
+        if (hits.length > 0) {
+          hits[0].scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }
+    });
+
+    vscode.postMessage({ type: "ready" });
+  </script>
+</body>
+</html>
