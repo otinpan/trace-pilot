@@ -34,6 +34,25 @@ export interface ChromePDFHash{
 export interface GPTHash{
     promptHash: string;
     generatedHash: string;
+    codeBlockHashes: CodeBlockHash[],
+
+}
+
+export interface CodeBlockHash{
+    index: number;
+    codeHash: string;
+
+    language?: string;
+    parentId?: string;
+    turnParentId?: string;
+}
+
+export interface RestoredCodeBlock{
+    index: number;
+    code: string;
+    language?: string;
+    parentId?: string;
+    turnParentId?: string;
 }
 
 export type AdditionalMetadata=

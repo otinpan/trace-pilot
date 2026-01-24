@@ -23,6 +23,9 @@ import * as fs from "fs";
 import { ResolveFnOutput } from 'module';
 import { MetaData } from '../common';
 import MarkdownIt from "markdown-it";
+import { RestoredCodeBlock } from '../constants/types';
+import { cachedDataVersionTag } from 'v8';
+import * as vscode from "vscode";
 
 // full textからneedleを見つけてRangeを返す
 export function findAllRanges(fullText: string, needle: string): Range[] {
@@ -225,15 +228,55 @@ function webviewContentPDF(extensionPath: string, srcPdfPath: string, webview: W
 const md = new MarkdownIt({
     html: false,
     linkify: true,
-    breaks: true,
+    breaks: false,
 });
 
+function inferLang(mdItLike: string|undefined):string{
+    const s=(mdItLike??"").trim();
+    const m = s.match(/!\s*([a-zA-Z0-9_+-]+)/);
+    if(m?.[1])return m[1].toLowerCase();
+    return "text";
+}
+
+function toFencedMarkdownFromBotResponse(
+    botResponse: string,
+    codeBlocks: {code:string,language:string}[],
+):string{
+    let out=botResponse??"";
+
+    out = out
+        // 「rustCopy code」「pythonCopy code」「cppCopy code」全部消える
+        .replace(/[a-zA-Z0-9_+-]*Copy code/gi, "")
+        // 単独の「Copy code」も消す
+        .replace(/\bCopy code\b/gi, "");
+
+    // 長いコードから置換する
+    const blocks = [...codeBlocks].sort((a, b) => (b.code?.length ?? 0) - (a.code?.length ?? 0));
+    for(const b of blocks){
+        const code=b.code?? "";
+        if(!code)continue;
+
+        const lang=inferLang(b.language);
+
+        const idx=out.indexOf(code);
+        if (idx >= 0) {
+            // codeブロックで囲む
+            const fenced = `\n\n\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
+            out = out.slice(0, idx) + fenced + out.slice(idx + code.length);
+        }
+
+    }
+    out = out.replace(/\n{3,}/g, "\n\n");
+    console.log(out);
+    return out.trim();
+}
 
 export async function showFullMdAndHighlightMd(
     hash: string,
     copiedText: string,
     promptText: string,
     generatedText: string,
+    codeBlocks: RestoredCodeBlock[],
     context: ExtensionContext,
 )
 :Promise<void>{
@@ -251,11 +294,18 @@ export async function showFullMdAndHighlightMd(
         ]
     };
 
+    const generatedMd=toFencedMarkdownFromBotResponse(
+        generatedText,
+        codeBlocks.map(cb=>({
+            code:cb.code ?? "",
+            language: cb.language ?? "text",
+        })),
+    );
     panel.webview.html=webviewContentMarkdown(
         context.extensionUri.fsPath,
         panel.webview,
         promptText,
-        generatedText
+        generatedMd
     );
 
     // 正規化

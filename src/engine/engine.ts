@@ -23,6 +23,7 @@ import {
     VSCodeMetadata,
     VSCodeHash,
     GPTHash,
+    RestoredCodeBlock,
     GPTMetadata,
     ChromePDFMetadata,
     ChromePDFHash,
@@ -33,7 +34,7 @@ import { ensureWorktree } from '../repository/worktree';
 import { json, text } from 'stream/consumers';
 import {execGit,getActiveUri} from "../common";
 import { fstat } from 'fs';
-import { toEditorSettings } from 'typescript';
+import { getParseTreeNode, toEditorSettings } from 'typescript';
 import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-and-store';
 import { setEngine } from 'crypto';
 import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf, showFullMdAndHighlightMd } from './show-information';
@@ -234,16 +235,32 @@ export class TraceEngine{
                 }
                 const promptHash=(ah as GPTHash).promptHash;
                 const generatedHash=(ah as GPTHash).generatedHash;
+                const codeBlockHashes=(ah as GPTHash).codeBlockHashes;
 
                 const promptText=await this.restoreTextByHash(promptHash);
                 const generatedText=await this.restoreTextByHash(generatedHash);
                 const copiedText=await this.restoreTextByHash(metaData.originalHash);
+                const restoredBlocks: RestoredCodeBlock[]=await Promise.all(
+                    (codeBlockHashes ?? []).map(async (b)=>{
+                        const code=await this.restoreTextByHash(b.codeHash);
+                        return{
+                            index: b.index,
+                            code,
+                            language: b.language,
+                            parentId: b.parentId,
+                            turnParentId: b.turnParentId,
+                        };
+                    })
+                );
+                
+                console.log(restoredBlocks);
 
                 await showFullMdAndHighlightMd(
                     metaHash,
                     copiedText,
                     promptText,
                     generatedText,
+                    restoredBlocks,
                     this.context
                 );
                 return true;
