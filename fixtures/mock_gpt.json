@@ -1,0 +1,13 @@
+{
+  "originalHash": "mock_string_0",
+  "additionalHash": {
+    "fullTextHash": "mock_string_0"
+  },
+  "url": "mock_string_0",
+  "type": "CHAT_GPT",
+  "timeCopied": "mock_string_0",
+  "timeCopiedNumber": 1700000000,
+  "additionalMetaData": {
+    "isText": true
+  }
+}

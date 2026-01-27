@@ -63,7 +63,7 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test",
-    "validate:metadata": "ts-node scripts/validate-schema.ts"
+    "validate:metadata": "ts-node tools/validate-schema.ts"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",

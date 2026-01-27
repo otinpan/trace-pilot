@@ -1,0 +1,13 @@
+{
+  "originalHash": "mock_string_1",
+  "additionalHash": {
+    "fullTextHash": "mock_string_1"
+  },
+  "url": "mock_string_1",
+  "type": "CHROME_PDF",
+  "timeCopied": "mock_string_1",
+  "timeCopiedNumber": 1700000001,
+  "additionalMetaData": {
+    "isText": false
+  }
+}
