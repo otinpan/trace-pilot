@@ -1,0 +1,38 @@
+name: validate-metadata
+on:
+  pull_request:
+  push:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trace-pilot (this repo)
+        uses: actions/checkout@v4
+        with:
+          path: trace-pilot
+
+      - name: Checkout schema from trace-pilot-chrome
+        uses: actions/checkout@v4
+        with:
+          repository: <OWNER>/trace-pilot-chrome
+          ref: schema
+          path: trace-pilot-chrome-schema
+          # private repoなら必要:
+          # token: ${{ secrets.GH_PAT_READ }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        working-directory: trace-pilot
+        run: npm ci
+
+      - name: Validate fixtures using published schema
+        run: |
+          set -euxo pipefail
+          cp trace-pilot-chrome-schema/contracts/schema.json trace-pilot/schemas/schema.json
+          cd trace-pilot
+          npm run validate:metadata

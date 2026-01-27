@@ -240,36 +240,61 @@ function inferLang(mdItLike: string|undefined):string{
 
 function toFencedMarkdownFromBotResponse(
     botResponse: string,
-    codeBlocks: {code:string,language:string}[],
-):string{
-    let out=botResponse??"";
+    codeBlocks: { code: string; language: string }[],
+): string {
 
-    out = out
-        // 「rustCopy code」「pythonCopy code」「cppCopy code」全部消える
-        .replace(/[a-zA-Z0-9_+-]*Copy code/gi, "")
-        // 単独の「Copy code」も消す
-        .replace(/\bCopy code\b/gi, "");
+    const normalize = (s: string) =>
+        (s ?? "")
+            .replace(/[a-zA-Z0-9_+-]*Copy code/gi, "")
+            .replace(/\bCopy code\b/gi, "")
+            .replace(/\r\n/g, "\n");
 
-    // 長いコードから置換する
-    const blocks = [...codeBlocks].sort((a, b) => (b.code?.length ?? 0) - (a.code?.length ?? 0));
-    for(const b of blocks){
-        const code=b.code?? "";
-        if(!code)continue;
+    // 先頭のラベル行を落とす
+    const stripLangHeader = (code: string, lang: string) => {
+        const firstLine = code.split("\n", 1)[0] ?? "";
+        const fl = firstLine.trim().toLowerCase();
 
-        const lang=inferLang(b.language);
+        const langNorm = (lang ?? "").trim().toLowerCase();
 
-        const idx=out.indexOf(code);
+        const isLangLine =
+            (langNorm && fl === langNorm) ||
+            ["rust", "bash", "sh", "shell", "makefile", "python", "cpp", "c++", "js", "javascript", "ts", "typescript", "json", "yaml", "toml"].includes(fl);
+
+        if (!isLangLine) return code;
+
+        const rest = code.slice(firstLine.length);
+        return rest.replace(/^\n+/, "");
+    };
+
+    let out = normalize(botResponse ?? "");
+
+    const blocks = [...codeBlocks].sort(
+        (a, b) => (b.code?.length ?? 0) - (a.code?.length ?? 0),
+    );
+
+    for (const b of blocks) {
+        const raw = b.code ?? "";
+        if (!raw.trim()) continue;
+
+        const lang = inferLang(b.language);
+
+        let code = normalize(raw).trimEnd();
+        code = stripLangHeader(code, lang).trimEnd();
+
+        if (!code.trim()) continue;
+
+        const idx = out.indexOf(code);
+
         if (idx >= 0) {
-            // codeブロックで囲む
             const fenced = `\n\n\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
             out = out.slice(0, idx) + fenced + out.slice(idx + code.length);
         }
-
     }
+
     out = out.replace(/\n{3,}/g, "\n\n");
-    console.log(out);
     return out.trim();
 }
+
 
 export async function showFullMdAndHighlightMd(
     hash: string,
