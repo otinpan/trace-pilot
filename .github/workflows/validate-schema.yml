@@ -33,6 +33,6 @@ jobs:
       - name: Validate fixtures using published schema
         run: |
           set -euxo pipefail
-          cp trace-pilot-chrome-schema/contracts/schema.json trace-pilot/schemas/schema.json
+          cp trace-pilot-chrome-schema/contracts/schema.json trace-pilot/fixtures/schema.json
           cd trace-pilot
           npm run validate:metadata
