@@ -34,5 +34,9 @@ jobs:
         run: |
           set -euxo pipefail
           cp trace-pilot-chrome-schema/contracts/schema.json trace-pilot/fixtures/schema.json
+
+          echo "===== schema.json from chrome(schema branch) ====="
+          cat trace-pilot/fixtures/schema.json
+          
           cd trace-pilot
           npm run validate:metadata
