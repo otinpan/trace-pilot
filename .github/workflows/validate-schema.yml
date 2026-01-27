@@ -15,7 +15,7 @@ jobs:
       - name: Checkout schema from trace-pilot-chrome
         uses: actions/checkout@v4
         with:
-          repository: <OWNER>/trace-pilot-chrome
+          repository: otinpan/trace-pilot-chrome
           ref: schema
           path: trace-pilot-chrome-schema
           # private repoなら必要:
