@@ -18,184 +18,28 @@
     .title { font-weight: 700; margin-bottom: 10px; opacity: 0.85; }
     pre { padding: 12px; overflow: auto; border-radius: 8px; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    .trace-highlight {
-      background: rgba(255,230,0,0.45);
-      border: 1px solid rgba(255,230,0,0.9);
-      border-radius: 3px;
-      padding: 1px 2px;
-    }
+    mark.tp-hit { background: rgba(255, 230, 0, 0.35); border: 1px solid rgba(255, 230, 0, 0.8); padding: 0 2px; border-radius: 3px; }
   </style>
 </head>
-
 <body>
   <div class="section">
     <div class="title">Prompt</div>
-    <div id="prompt">{{promptHtml}}</div>
+    <div id="prompt"></div>
   </div>
 
   <div class="section">
     <div class="title">Generated</div>
-    <div id="generated">{{generatedHtml}}</div>
+    <div id="generated"></div>
   </div>
 
-  <script nonce="{{nonce}}">
-      const vscode = acquireVsCodeApi();
+  <textarea id="tp-prompt" style="display:none">{{promptText}}</textarea>
+  <textarea id="tp-generated" style="display:none">{{generatedText}}</textarea>
 
-      function normalizeEol(s) {
-        return (s ?? "").replace(/\r\n/g, "\n");
-      }
-    
-      function clearHighlights(rootEl) {
-        rootEl.querySelectorAll("mark.trace-highlight").forEach((mk) => {
-          mk.replaceWith(document.createTextNode(mk.textContent || ""));
-        });
-        rootEl.normalize();
-      }
-    
-      function isUsefulNeedleLine(s) {
-        const t = (s ?? "").trim();
-        if (t.length < 3) return false;
-        if (!/[A-Za-z0-9_]/.test(t)) return false;
-        return true;
-      }
-    
-      function normalizeLines(needle) {
-        return normalizeEol(needle)
-          .trimEnd()
-          .split("\n")
-          .map((s) => s.trimEnd())
-          .filter(isUsefulNeedleLine);
-      }
-    
-      function getTextNodes(el) {
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        const nodes = [];
-        let n;
-        while ((n = walker.nextNode())) {
-          if ((n.nodeValue ?? "").length > 0) nodes.push(n);
-        }
-        return nodes;
-      }
-    
-      // global offset -> {node, offset}
-      function locate(nodes, globalOffset) {
-        let cur = 0;
-        for (const node of nodes) {
-          const len = node.nodeValue?.length ?? 0;
-          if (globalOffset <= cur + len) {
-            return { node, offset: globalOffset - cur };
-          }
-          cur += len;
-        }
-        const last = nodes[nodes.length - 1];
-        return { node: last, offset: last?.nodeValue?.length ?? 0 };
-      }
-    
-      // Rangeで囲める範囲だけ mark 化する（失敗しにくい）
-      function wrapByRange(el, start, end, hits) {
-        const nodes = getTextNodes(el);
-        if (nodes.length === 0) return;
-      
-        const a = locate(nodes, start);
-        const b = locate(nodes, end);
-      
-        try {
-          const range = document.createRange();
-          range.setStart(a.node, a.offset);
-          range.setEnd(b.node, b.offset);
-        
-          // surroundContents は「部分的に要素を跨ぐ」と例外になることがあるので、
-          // 一旦 extract → mark → insert にする（これが一番安定）
-          const frag = range.extractContents();
-          const mk = document.createElement("mark");
-          mk.className = "trace-highlight";
-          mk.appendChild(frag);
-          range.insertNode(mk);
-        
-          hits.push(mk);
-          el.normalize();
-        } catch (e) {
-          console.warn("wrapByRange failed:", e);
-        }
-      }
-    
-      function highlightTextInElement(el, needle, hits) {
-        const ned = normalizeEol(needle);
-        if (!ned) return;
-      
-        // ★重要：毎回最新の textContent を見て、見つけた位置で wrap → また取り直す
-        let from = 0;
-        while (true) {
-          const hay = normalizeEol(el.textContent || "");
-          const idx = hay.indexOf(ned, from);
-          if (idx < 0) break;
-        
-          wrapByRange(el, idx, idx + ned.length, hits);
-        
-          // DOMが変わるので、次検索開始位置は「直後」へ
-          from = idx + ned.length;
-        
-          // 安全弁：from が現在の長さを超えたら終了
-          const after = normalizeEol(el.textContent || "");
-          if (from > after.length) break;
-        }
-      }
-    
-      function highlightInDom(rootEl, needle) {
-        if (!needle) return [];
-        const hits = [];
-      
-        const whole = normalizeEol(needle).trimEnd();
-        // まず塊で
-        rootEl.querySelectorAll("pre code").forEach((codeEl) => {
-          const hay = normalizeEol(codeEl.textContent || "");
-          if (whole && hay.includes(whole)) {
-            highlightTextInElement(codeEl, whole, hits);
-          }
-        });
-      
-        // 当たらなければ行フォールバック
-        if (hits.length === 0) {
-          const lines = normalizeLines(needle);
-          rootEl.querySelectorAll("pre code").forEach((codeEl) => {
-            const hay = normalizeEol(codeEl.textContent || "");
-            for (const n of lines) {
-              if (n && hay.includes(n)) highlightTextInElement(codeEl, n, hits);
-            }
-          });
-        }
-      
-        return hits;
-      }
-    
-      window.addEventListener("message", (ev) => {
-        const msg = ev.data;
-        if (!msg) return;
-      
-        if (msg.type === "find") {
-          const needle = normalizeEol(msg.needle || "").trimEnd();
-        
-          const p = document.getElementById("prompt");
-          const g = document.getElementById("generated");
-          if (!p || !g) return;
-        
-          clearHighlights(p);
-          clearHighlights(g);
-        
-          const hits = [
-            ...highlightInDom(p, needle),
-            ...highlightInDom(g, needle),
-          ];
-        
-          if (hits.length > 0) {
-            hits[0].scrollIntoView({ block: "center", behavior: "smooth" });
-          } else {
-            console.log("no hits");
-          }
-        }
-      });
-    
-      vscode.postMessage({ type: "ready" });
-    </script>
-  </body>
+  <script nonce="{{nonce}}" src="{{markdownItUri}}"></script>
+  <script nonce="{{nonce}}" src="{{showMarkdownJsUri}}"></script>
+
+
+  <script nonce="{{nonce}}" src="{{markdownItUri}}"></script>
+  <script nonce="{{nonce}}" src="{{showMarkdownJsUri}}"></script>
+</body>
 </html>

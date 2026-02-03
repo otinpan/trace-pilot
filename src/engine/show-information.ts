@@ -20,9 +20,6 @@ import path from 'path';
 import { fstat, openSync } from 'fs';;
 import * as os from "os";
 import * as fs from "fs";
-import { ResolveFnOutput } from 'module';
-import { MetaData } from '../common';
-import MarkdownIt from "markdown-it";
 import { RestoredCodeBlock } from '../constants/types';
 import { cachedDataVersionTag } from 'v8';
 import * as vscode from "vscode";
@@ -225,12 +222,6 @@ function webviewContentPDF(extensionPath: string, srcPdfPath: string, webview: W
 
 
 // markdown /////////////////////////////////////////////////////////////////////
-const md = new MarkdownIt({
-    html: false,
-    linkify: true,
-    breaks: false,
-});
-
 function inferLang(mdItLike: string|undefined):string{
     const s=(mdItLike??"").trim();
     const m = s.match(/!\s*([a-zA-Z0-9_+-]+)/);
@@ -258,7 +249,7 @@ function toFencedMarkdownFromBotResponse(
 
         const isLangLine =
             (langNorm && fl === langNorm) ||
-            ["rust", "bash", "sh", "shell", "makefile", "python", "cpp", "c++", "js", "javascript", "ts", "typescript", "json", "yaml", "toml"].includes(fl);
+            ["rust", "bash", "sh", "shell", "makefile", "python","perl", "cpp", "c++", "js", "javascript", "ts", "typescript", "json", "yaml", "toml"].includes(fl);
 
         if (!isLangLine) return code;
 
@@ -352,29 +343,43 @@ export async function showFullMdAndHighlightMd(
 function webviewContentMarkdown(
     extensionPath: string,
     webview: Webview,
-    promptText:string,
-    generatedText:string,
-):string{
-    const htmlPath=path.join(extensionPath,"media","show_markdown.html");
-    const nonce=getNonce();
+    promptText: string,
+    generatedText: string,
+): string {
+    const htmlPath = path.join(extensionPath, "media", "show_markdown.html");
+    const nonce = getNonce();
 
-    const promptHtml=md.render(promptText ?? "");
-    const generatedHtml=md.render(generatedText ?? "");
+    const markdownItPath = path.join(extensionPath, "media", "markdown-it.min.js");
+    const showMarkdownJsPath = path.join(extensionPath, "media", "show_markdown.js");
 
-    let html=fs.readFileSync(htmlPath,"utf8");
+    const markdownItUri = webview.asWebviewUri(Uri.file(markdownItPath));
+    const showMarkdownJsUri = webview.asWebviewUri(Uri.file(showMarkdownJsPath));
+
+    let html = fs.readFileSync(htmlPath, "utf8");
     html = replaceAllToken(html, "cspSource", webview.cspSource);
-    html=replaceAllToken(html,"nonce",nonce);
+    html = replaceAllToken(html, "nonce", nonce);
 
-    // show_markdown.htmlの{{promptHtml}}をpromptHtmlに置き換える
-    html=replaceAllToken(html,"promptHtml",promptHtml);
-    html=replaceAllToken(html,"generatedHtml",generatedHtml);
+    html = replaceAllToken(html, "markdownItUri", markdownItUri.toString());
+    html = replaceAllToken(html, "showMarkdownJsUri", showMarkdownJsUri.toString());
 
-    // 置換漏れがあると必ず事故るので検出
+    html = replaceAllToken(html, "promptText", escapeForHtmlTemplate(promptText ?? ""));
+    html = replaceAllToken(html, "generatedText", escapeForHtmlTemplate(generatedText ?? ""));
+
     const leftovers = html.match(/\{\{\s*\w+\s*\}\}/g);
-    if(leftovers){
-        console.error("Unreplaced template tokens remain:", leftovers);
-    }
+    if (leftovers) console.error("Unreplaced template tokens remain:", leftovers);
 
     return html;
-
 }
+
+
+function escapeForHtmlTemplate(s: string): string {
+    // show_markdown.html に埋め込むので最低限のエスケープ
+    // （Webview側で textContent / md.render に渡す前提）
+    return (s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
