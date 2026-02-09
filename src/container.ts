@@ -251,20 +251,18 @@ export class Container{
       if(this.openPromptCardsDisposable)return;
 
         const openPromptCardsCommandID="trace-pilot.openPromptCards";
-        this.openPromptCardsDisposable=commands.registerCommand("trace-pilot.openPromptCards",
+        this.openPromptCardsDisposable=commands.registerCommand(openPromptCardsCommandID,
                                                                async(metaHash:string)=>{
-        /*let ok:boolean=await this.engine.VSCodeShowPromptCards(metaHash);
+        let ok:boolean=await this.engine.VSCodeShowPromptCards(metaHash);
 
         if(!ok){
           window.showWarningMessage(`Trace-Pilot: prompt card not found for ${metaHash}`);
           return;
         }
-        */
       });
       this.context.subscriptions.push(this.openPromptCardsDisposable);
       this.disposables.push(this.openPromptCardsDisposable);
 
     }
 }
-
 
