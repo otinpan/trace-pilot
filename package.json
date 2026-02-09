@@ -33,6 +33,11 @@
         "category": "Trace Pilot",
         "command": "trace-pilot.openMeta",
         "title": "openMeta"
+      },
+      {
+        "category": "Trace Pilot",
+        "command": "trace-pilot.openPromptCards",
+        "title": "openPromptCards"
       }
     ],
     "menus": {

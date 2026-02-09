@@ -101,6 +101,7 @@ async function gitCatFileBlobBytes(cwd:string,hash:string):Promise<Buffer>{
     });
 }
 
+
 // pdfを保存
 async function storePdfFromHash(repoPath:string,hash:string):Promise<string>{
     const worktreePath=path.join(repoPath,'.trace-worktree');
@@ -147,7 +148,7 @@ export async function showFullPdfAndHighligtPdf(
 
     //webview
     const panel=window.createWebviewPanel(
-        "tracePilotPdf",
+        "trace-pilot.pdf",
         `Trace-Pilot PDF: ${hash.slice(0,8)}`,
         ViewColumn.Active,
         { enableScripts:true}
@@ -205,6 +206,7 @@ function webviewContentPDF(extensionPath: string, srcPdfPath: string, webview: W
     const pdfUri = webview.asWebviewUri(Uri.file(srcPdfPath));
     const nonce = getNonce();
     let html = fs.readFileSync(htmlPath, "utf8");
+
     html = replaceAllToken(html, "pdfJsUri", pdfJsUri.toString());
     html = replaceAllToken(html, "pdfJsWorkerUri", pdfJsWorkerUri.toString());
     html = replaceAllToken(html, "pdfUri", pdfUri.toString());
@@ -297,7 +299,7 @@ export async function showFullMdAndHighlightMd(
 )
 :Promise<void>{
     const panel=window.createWebviewPanel(
-        "tracePilotMarkdown",
+        "trace-pilot.markdown",
         `Trace-Pilot Markdown: ${hash.slice(0,8)}`,
         ViewColumn.Active,
     );

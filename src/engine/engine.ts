@@ -38,6 +38,7 @@ import { getParseTreeNode, toEditorSettings } from 'typescript';
 import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-and-store';
 import { setEngine } from 'crypto';
 import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf, showFullMdAndHighlightMd } from './show-information';
+import { showPromptCards } from './show-promptcards';
 
 export class TraceEngine{
     public highlightDeco?: TextEditorDecorationType;
@@ -289,6 +290,35 @@ export class TraceEngine{
         
     }
 
+    // metadataのWEB_INFO_SORUCEを見る
+    async getMetadataType(metaHash: string):Promise<WEB_INFO_SOURCE>{
+      try{
+        const metaJSON=await this.restoreTextByHash(metaHash);
+
+        window.showInformationMessage(metaJSON);
+        const metaData=JSON.parse(metaJSON) as Metadata;
+        return metaData.type;
+      }catch{
+        console.log("failed to get type from Metadata");
+        return WEB_INFO_SOURCE.OTHER;
+      }
+    }
+
+    async  VSCodeShowPromptCards(metaHash:string):Promise<boolean>{
+      try{
+        const metaJSON=await this.restoreTextByHash(metaHash);
+        const metaData=JSON.parse(metaJSON) as Metadata;
+        if(metaData.type!==WEB_INFO_SOURCE.CHAT_GPT){
+          return false;
+        }
+
+        await showPromptCards(this.context,metaHash);
+        return true;
+      }catch{
+        console.log("failed to show prompt");
+        return false;
+      }
+    }
     // コピー
     // 元の文書を保存する → ハッシュ値
     // メタデータの生成
@@ -314,5 +344,4 @@ export class TraceEngine{
     // hover表示
     // 正規表現と一致した行を取り出して、そこからハッシュ値をパースする
 
-    
 }

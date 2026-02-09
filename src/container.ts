@@ -17,6 +17,7 @@ import{
 
 import {TraceEngine} from "./engine/engine";
 import { Z_PARTIAL_FLUSH } from 'zlib';
+import { WEB_INFO_SOURCE } from './constants/types';
 
 export class Container{
     // プロジェクト内でインスタンスを1つに限定
@@ -29,7 +30,7 @@ export class Container{
     private hoverDisposable: Disposable | undefined;
     private codelensDisposable: Disposable | undefined;
     private openMetaDisposable: Disposable | undefined;
-    
+    private openPromptCardsDisposable: Disposable | undefined;
 
     public constructor(
         readonly context: ExtensionContext,
@@ -43,6 +44,7 @@ export class Container{
         this.enableHoverProvider();
         this.enableCodeLensProvider();
         this.enableOpenMetaCommand();
+        this.enableOpenPromptCardsCommand();
     }
 
     // 非同期的な初期化処理
@@ -172,13 +174,22 @@ export class Container{
                     const range=new Range(new Position(i,0),new Position(i,0));
 
                     // クリックできる
-                    const cmd: Command = {
+                    const cmdMeta: Command = {
                         title: `Trace-Pilot: ${metaHash.slice(0, 8)}…`, // CodeLens上に表示されるテキスト
                         command: "trace-pilot.openMeta", // 実行するコマンドID
                         arguments: [metaHash], // コマンドに渡す引数
-                    };   
+                    };
 
-                    lenses.push(new CodeLens(range,cmd));
+                    const type:WEB_INFO_SOURCE=await this.engine.getMetadataType(metaHash);
+                    if(type===WEB_INFO_SOURCE.CHAT_GPT){
+                      const cmdPrompt:Command={
+                        title: `Trace-Pilot: Open PromptCards`,
+                        command: "trace-pilot.openPromptCards",
+                        arguments: [metaHash],
+                      };
+                      lenses.push(new CodeLens(range,cmdPrompt));
+                    }
+                    lenses.push(new CodeLens(range,cmdMeta));
                 }
 
                 return lenses;
@@ -208,6 +219,7 @@ export class Container{
                   command: "trace-pilot.openMeta",
                   arguments: [metaHash],
                 };
+
             
                 return lens;
             }
@@ -234,4 +246,25 @@ export class Container{
         this.context.subscriptions.push(this.openMetaDisposable);
         this.disposables.push(this.openMetaDisposable);
     }
+
+    private enableOpenPromptCardsCommand(){
+      if(this.openPromptCardsDisposable)return;
+
+        const openPromptCardsCommandID="trace-pilot.openPromptCards";
+        this.openPromptCardsDisposable=commands.registerCommand("trace-pilot.openPromptCards",
+                                                               async(metaHash:string)=>{
+        /*let ok:boolean=await this.engine.VSCodeShowPromptCards(metaHash);
+
+        if(!ok){
+          window.showWarningMessage(`Trace-Pilot: prompt card not found for ${metaHash}`);
+          return;
+        }
+        */
+      });
+      this.context.subscriptions.push(this.openPromptCardsDisposable);
+      this.disposables.push(this.openPromptCardsDisposable);
+
+    }
 }
+
+

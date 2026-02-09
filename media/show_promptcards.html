@@ -1,0 +1,21 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy"
+      content="
+        default-src 'none';
+        img-src {{cspSource}} https: data:;
+        style-src {{cspSource}} 'unsafe-inline';
+        script-src 'nonce-{{nonce}}';
+      ">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trace-Pilot PromptCards</title>
+  </head>
+  <body>
+    <h1> MY EXTENSION </h1>
+    <input type="text" id="register-input" />
+    <button id="register-button">register</button>
+    <script src="${{promptCardsJsUri}}"></script>
+  </body>
+</html>
+
