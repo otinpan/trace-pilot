@@ -3,6 +3,7 @@ const PREVIEW_LEN = 120;
 const selectedPairHash = typeof window.TRACE_SELECTED_PAIR_HASH === "string"
   ? window.TRACE_SELECTED_PAIR_HASH
   : "";
+const vscode = acquireVsCodeApi();
 const list = document.getElementById("card-list");
 let selectedCardElement = null;
 
@@ -19,12 +20,19 @@ if (list) {
 
     button.appendChild(makeRow("prompt", toPreview(card.promptText, PREVIEW_LEN)));
     button.appendChild(makeRow("generated", toPreview(card.generatedText, PREVIEW_LEN)));
-    button.appendChild(makeRow("metaHashes", Array.isArray(card.metaHashes) ? card.metaHashes.join("\n") : ""));
+    button.appendChild(makeMetaHashButtons(card.metaHashes));
     button.appendChild(makeRow("copiedTime", card.copiedTime));
 
     button.addEventListener("click", () => {
-      // click action will be implemented later.
-      console.log("clicked metaHashes:", card.metaHashes);
+      const values = Array.isArray(card.metaHashes) ? card.metaHashes : [];
+      if (values.length === 0) {
+        return;
+      }
+      const lastMetaHash = String(values[values.length - 1]);
+      vscode.postMessage({
+        type: "openMeta",
+        metaHash: lastMetaHash,
+      });
     });
 
     list.appendChild(button);
@@ -64,4 +72,36 @@ function toPreview(text, maxLen) {
     return s;
   }
   return `${s.slice(0, maxLen)}...`;
+}
+
+function makeMetaHashButtons(metaHashes) {
+  const row = document.createElement("div");
+  row.className = "card-row";
+
+  const labelEl = document.createElement("div");
+  labelEl.className = "card-label";
+  labelEl.textContent = "metaHashes";
+  row.appendChild(labelEl);
+
+  const chips = document.createElement("div");
+  chips.className = "meta-hash-list";
+
+  const values = Array.isArray(metaHashes) ? metaHashes : [];
+  for (const metaHash of values) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "meta-hash-chip";
+    chip.textContent = String(metaHash);
+    chip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      vscode.postMessage({
+        type: "openMeta",
+        metaHash: String(metaHash),
+      });
+    });
+    chips.appendChild(chip);
+  }
+
+  row.appendChild(chips);
+  return row;
 }

@@ -4,6 +4,7 @@ import {
     Uri,
     ViewColumn,
     Webview,
+    commands,
 } from 'vscode';
 import path from 'path';
 import * as os from "os";
@@ -44,6 +45,17 @@ export async function showPromptCards(
   };
 
   panel.webview.html=webviewContentPromptCards(context.extensionUri.fsPath,panel.webview,data);
+
+  const disp=panel.webview.onDidReceiveMessage(async (msg)=>{
+    if(msg?.type!=="openMeta"){
+      return;
+    }
+    if(typeof msg.metaHash!=="string" || !msg.metaHash){
+      return;
+    }
+    await commands.executeCommand("trace-pilot.openMeta",msg.metaHash);
+  });
+  context.subscriptions.push(disp);
 
 }
 
