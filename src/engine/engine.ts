@@ -39,13 +39,16 @@ import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-an
 import { setEngine } from 'crypto';
 import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf, showFullMdAndHighlightMd } from './show-information';
 import { showPromptCards } from './show-promptcards';
+import { PromptCards } from './prompt-cards';
 
 export class TraceEngine{
     public highlightDeco?: TextEditorDecorationType;
+    public promptCards: PromptCards;
     constructor(
         private readonly context: ExtensionContext
     ){
-        
+      this.promptCards=new PromptCards();
+      void this.promptCards.remakePromptCards();
     };
 
     async VSCodeCopy(): Promise<boolean>{
@@ -318,6 +321,21 @@ export class TraceEngine{
         console.log("failed to show prompt");
         return false;
       }
+    }
+    async remakePromptCards():Promise<boolean>{
+      console.log(this.promptCards.times);
+      console.log(this.promptCards.timesToHash);
+      console.log(this.promptCards.hashToPromptMetadata);
+
+      return this.promptCards.remakePromptCards();
+    }
+
+    async addPromptCards(blobPath:string):Promise<boolean>{
+      console.log(this.promptCards.times);
+      console.log(this.promptCards.timesToHash);
+      console.log(this.promptCards.hashToPromptMetadata);
+
+     return this.promptCards.addPromptCards(blobPath); 
     }
     // コピー
     // 元の文書を保存する → ハッシュ値

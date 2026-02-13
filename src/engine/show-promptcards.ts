@@ -26,11 +26,11 @@ import * as vscode from "vscode";
 
 export async function showPromptCards(
   context:ExtensionContext,
-  hash: string,
+  pair_hash: string,
 ):Promise<void>{
   const panel=window.createWebviewPanel(
     "trace-pilot.promptCards",
-    `Trace-Pilot PromptCards: ${hash.slice(0,8)}`,
+    `Trace-Pilot PromptCards: ${pair_hash.slice(0,8)}`,
     ViewColumn.Beside,
     {enableScripts: true}
   );

@@ -1,4 +1,6 @@
 import{
+  RelativePattern,
+  workspace,
   ExtensionContext,
   Disposable,
   commands,
@@ -14,11 +16,13 @@ import{
   CancellationToken,
   Range,
 } from 'vscode';
+import path from "path";
 
 import {TraceEngine} from "./engine/engine";
 import { Z_PARTIAL_FLUSH } from 'zlib';
 import { WEB_INFO_SOURCE } from './constants/types';
-
+import { ensureWorktree } from './repository/worktree';
+import { getRepositoryPathOrNull } from './repository/repository';
 export class Container{
     // プロジェクト内でインスタンスを1つに限定
     static #instance: Container;
@@ -45,6 +49,7 @@ export class Container{
         this.enableCodeLensProvider();
         this.enableOpenMetaCommand();
         this.enableOpenPromptCardsCommand();
+        this.enableWorktreeWatcher();
     }
 
     // 非同期的な初期化処理
@@ -263,6 +268,41 @@ export class Container{
       this.context.subscriptions.push(this.openPromptCardsDisposable);
       this.disposables.push(this.openPromptCardsDisposable);
 
+    }
+
+    private async enableWorktreeWatcher(){
+      const repoPath=await getRepositoryPathOrNull();
+      if(!repoPath){
+        throw new Error("Not a git repository");
+      }
+      const isWorktreePath=await ensureWorktree(repoPath);
+      if(!isWorktreePath){
+        throw new Error("Not a worktree");
+      }
+      const worktreePath=path.join(repoPath,".trace-worktree");
+      
+      const watcher=workspace.createFileSystemWatcher(
+        new RelativePattern(
+          worktreePath,'**'
+        )
+      );
+
+      watcher.onDidCreate(uri=>{
+        //console.log("Created: ",uri.fsPath);
+        this.engine.addPromptCards(uri.fsPath);
+      });
+
+      /*watcher.onDidChange(uri=>{
+        //console.log("Changed: ",uri.fsPath);
+        this.engine.remakePromptCards();
+      });*/
+
+      watcher.onDidDelete(uri=>{
+        //console.log("Deleted: ",uri.fsPath);
+        this.engine.remakePromptCards();
+      });
+
+      this.context.subscriptions.push(watcher);
     }
 }
 
