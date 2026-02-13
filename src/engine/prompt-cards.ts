@@ -1,6 +1,6 @@
 import{
   ExtensionContext,
-} from 'vscode'
+} from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
 import { Metadata,WEB_INFO_SOURCE,GPTHash } from "../constants/types";
@@ -148,7 +148,16 @@ export class PromptCards{
     const promptHash=(ah as GPTHash).promptHash;
     const generatedHash=(ah as GPTHash).generatedHash;
     const pairHash=`${promptHash}:${generatedHash}`;
-    showPromptCards(context,pairHash);
+    await showPromptCards(context,{
+      pairHash,
+      timesText: JSON.stringify(this.times,null,2),
+      timesToHashText: JSON.stringify(Object.fromEntries(this.timesToHash),null,2),
+      hashToPromptMetadataText: JSON.stringify(
+        Object.fromEntries(this.hashToPromptMetadata),
+        null,
+        2
+      ),
+    });
     return true;
   }
 
@@ -157,8 +166,11 @@ export class PromptCards{
     let r=arr.length;
     while(l<r){
       const m=(l+r)>>1;
-      if(arr[m]<x)l=m+1;
-      else r=m;
+      if(arr[m]<x){
+        l=m+1;
+      }else{
+        r=m;
+      }
     }
     return l;
   }
@@ -167,7 +179,9 @@ export class PromptCards{
     const i=this.lowerBound(this.times,time);
 
     let j=i;
-    while(j<this.times.length&&this.times[j]===time)j++;
+    while(j<this.times.length&&this.times[j]===time){
+      j++;
+    }
     this.times.splice(j,0,time);
   }
 }

@@ -1,2 +1,1 @@
-const ul=document.getElementById("list");
-ul.innerText="command list";
+// prompt card debug data is rendered from extension side into HTML.

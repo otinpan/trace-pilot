@@ -38,7 +38,6 @@ import { getParseTreeNode, toEditorSettings } from 'typescript';
 import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-and-store';
 import { setEngine } from 'crypto';
 import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf, showFullMdAndHighlightMd } from './show-information';
-import { showPromptCards } from './show-promptcards';
 import { PromptCards } from './prompt-cards';
 
 export class TraceEngine{
@@ -311,12 +310,7 @@ export class TraceEngine{
       try{
         const metaJSON=await this.restoreTextByHash(metaHash);
         const metaData=JSON.parse(metaJSON) as Metadata;
-        if(metaData.type!==WEB_INFO_SOURCE.CHAT_GPT){
-          return false;
-        }
-
-        await showPromptCards(this.context,metaHash);
-        return true;
+        return this.promptCards.showPromptCards(this.context,metaData);
       }catch{
         console.log("failed to show prompt");
         return false;

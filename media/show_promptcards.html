@@ -12,10 +12,15 @@
     <title>Trace-Pilot PromptCards</title>
   </head>
   <body>
-    <h1> MY EXTENSION </h1>
-    <input type="text" id="register-input" />
-    <button id="register-button">register</button>
-    <script src="${{promptCardsJsUri}}"></script>
+    <h1>Prompt Cards (Debug)</h1>
+    <h2>pairHash</h2>
+    <pre>{{pairHash}}</pre>
+    <h2>times</h2>
+    <pre>{{timesText}}</pre>
+    <h2>timesToHash</h2>
+    <pre>{{timesToHashText}}</pre>
+    <h2>hashToPromptMetadata</h2>
+    <pre>{{hashToPromptMetadataText}}</pre>
+    <script nonce="{{nonce}}" src="{{promptCardsJsUri}}"></script>
   </body>
 </html>
-

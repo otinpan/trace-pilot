@@ -180,7 +180,7 @@ export class Container{
 
                     // クリックできる
                     const cmdMeta: Command = {
-                        title: `Trace-Pilot: ${metaHash.slice(0, 8)}…`, // CodeLens上に表示されるテキスト
+                        title: `Trace-Pilot.openInfo`, // CodeLens上に表示されるテキスト
                         command: "trace-pilot.openMeta", // 実行するコマンドID
                         arguments: [metaHash], // コマンドに渡す引数
                     };

@@ -1,36 +1,28 @@
 import {
-    Range,
-    Position,
-    workspace,
     window,
-    TextEditorDecorationType,
-    DecorationOptions,
     ExtensionContext,
     Uri,
-    commands,
     ViewColumn,
     Webview,
-    TaskPanelKind,
 } from 'vscode';
-
-import { TraceEngine } from "./engine";
-import { ensureWorktree } from '../repository/worktree';
-import * as cp from "child_process";
 import path from 'path';
-import { fstat, openSync } from 'fs';;
 import * as os from "os";
 import * as fs from "fs";
-import { RestoredCodeBlock } from '../constants/types';
-import { cachedDataVersionTag } from 'v8';
-import * as vscode from "vscode";
+
+export interface PromptCardsWebviewData{
+  pairHash: string;
+  timesText: string;
+  timesToHashText: string;
+  hashToPromptMetadataText: string;
+}
 
 export async function showPromptCards(
   context:ExtensionContext,
-  pair_hash: string,
+  data: PromptCardsWebviewData,
 ):Promise<void>{
   const panel=window.createWebviewPanel(
     "trace-pilot.promptCards",
-    `Trace-Pilot PromptCards: ${pair_hash.slice(0,8)}`,
+    `Trace-Pilot PromptCards: ${data.pairHash.slice(0,8)}`,
     ViewColumn.Beside,
     {enableScripts: true}
   );
@@ -41,15 +33,19 @@ export async function showPromptCards(
       Uri.joinPath(context.extensionUri,"media"),
       Uri.file(path.join(os.tmpdir(),"trace-pilot")),
     ]
-  }
+  };
 
-  panel.webview.html=webviewContentPromptCards(context.extensionUri.fsPath,panel.webview);
+  panel.webview.html=webviewContentPromptCards(context.extensionUri.fsPath,panel.webview,data);
 
 }
 
 
 
-function webviewContentPromptCards(extensionPath:string,webview: Webview):string{
+function webviewContentPromptCards(
+  extensionPath:string,
+  webview: Webview,
+  data: PromptCardsWebviewData
+):string{
   const htmlPath=path.join(extensionPath,"media","show_promptcards.html");
   
   const nonce=getNonce();
@@ -62,6 +58,14 @@ function webviewContentPromptCards(extensionPath:string,webview: Webview):string
   html=replaceAllToken(html,"cspSource",webview.cspSource);
   html=replaceAllToken(html,"promptCardsJsUri",promptCardsJsUri.toString());
   html=replaceAllToken(html,"nonce",nonce);
+  html=replaceAllToken(html,"pairHash",escapeHtml(data.pairHash));
+  html=replaceAllToken(html,"timesText",escapeHtml(data.timesText));
+  html=replaceAllToken(html,"timesToHashText",escapeHtml(data.timesToHashText));
+  html=replaceAllToken(
+    html,
+    "hashToPromptMetadataText",
+    escapeHtml(data.hashToPromptMetadataText)
+  );
 
   return html;
 }
@@ -80,3 +84,9 @@ function getNonce(): string {
   return text;
 }
 
+function escapeHtml(value: string): string{
+  return value
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;");
+}
