@@ -13,12 +13,82 @@
   <title>Trace-Pilot Markdown</title>
 
   <style>
-    body { padding: 16px; line-height: 1.7; }
-    .section { margin-bottom: 18px; padding: 12px; border: 1px solid rgba(127,127,127,0.3); border-radius: 10px; }
-    .title { font-weight: 700; margin-bottom: 10px; opacity: 0.85; }
-    pre { padding: 12px; overflow: auto; border-radius: 8px; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    mark.tp-hit { background: rgba(255, 230, 0, 0.35); border: 1px solid rgba(255, 230, 0, 0.8); padding: 0 2px; border-radius: 3px; }
+    :root{
+      --bg: #000000;
+      --text-main: #eef6fb;
+      --text-sub: #b5ccd9;
+      --card-bg: rgba(255,255,255,0.06);
+      --card-border: rgba(255,255,255,0.24);
+      --card-hover: rgba(255,255,255,0.36);
+      --accent: #4da3ff;
+      --accent-soft: rgba(77,163,255,0.28);
+      --code-bg: rgba(9,20,30,0.65);
+    }
+    body {
+      margin: 0;
+      padding: 20px;
+      line-height: 1.7;
+      color: var(--text-main);
+      font-family: "Trebuchet MS", "Gill Sans", "Century Gothic", sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+    }
+    .section {
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      background: linear-gradient(180deg, var(--card-bg), rgba(255,255,255,0.02));
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    .section:hover{
+      border-color: var(--card-hover);
+      box-shadow: 0 16px 30px rgba(0,0,0,0.28);
+    }
+    .title {
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #9fd0ff;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      font-size: 12px;
+    }
+    pre {
+      padding: 12px;
+      overflow: auto;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: var(--code-bg);
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+    }
+    :not(pre) > code{
+      background: rgba(77,163,255,0.18);
+      border: 1px solid rgba(77,163,255,0.38);
+      border-radius: 6px;
+      padding: 1px 5px;
+    }
+    mark.tp-hit {
+      background: rgba(77, 163, 255, 0.28);
+      border: 1px solid rgba(77, 163, 255, 0.75);
+      padding: 0 2px;
+      border-radius: 4px;
+    }
+    a{
+      color: #86c1ff;
+    }
+    hr{
+      border: 0;
+      border-top: 1px solid rgba(255,255,255,0.16);
+    }
+    @media (max-width: 700px){
+      body{
+        padding: 14px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -34,10 +104,6 @@
 
   <textarea id="tp-prompt" style="display:none">{{promptText}}</textarea>
   <textarea id="tp-generated" style="display:none">{{generatedText}}</textarea>
-
-  <script nonce="{{nonce}}" src="{{markdownItUri}}"></script>
-  <script nonce="{{nonce}}" src="{{showMarkdownJsUri}}"></script>
-
 
   <script nonce="{{nonce}}" src="{{markdownItUri}}"></script>
   <script nonce="{{nonce}}" src="{{showMarkdownJsUri}}"></script>
