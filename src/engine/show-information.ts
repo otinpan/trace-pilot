@@ -259,6 +259,62 @@ function toFencedMarkdownFromBotResponse(
         return rest.replace(/^\n+/, "");
     };
 
+    const isLineBoundary = (ch: string|undefined) =>
+        ch===undefined || ch==="\n";
+
+    const getFenceRanges = (text: string): Array<{start: number; end: number}> => {
+        const ranges: Array<{start: number; end: number}> = [];
+        let i=0;
+        while(i<text.length){
+            const openIdx=text.indexOf("```", i);
+            if(openIdx<0){
+                break;
+            }
+            const closeIdx=text.indexOf("```", openIdx+3);
+            if(closeIdx<0){
+                break;
+            }
+            ranges.push({start: openIdx, end: closeIdx+3});
+            i=closeIdx+3;
+        }
+        return ranges;
+    };
+
+    const overlapsFence = (
+        start: number,
+        end: number,
+        ranges: Array<{start:number; end:number}>
+    ) => {
+        for(const r of ranges){
+            if(start<r.end && end>r.start){
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const findBestCodeMatch = (text: string, code: string): number => {
+        const fenceRanges=getFenceRanges(text);
+        let from=0;
+        while(from<text.length){
+            const idx=text.indexOf(code, from);
+            if(idx<0){
+                return -1;
+            }
+            const end=idx+code.length;
+            const prev=text[idx-1];
+            const next=text[end];
+
+            const boundaryOk=isLineBoundary(prev)&&isLineBoundary(next);
+            const notInsideFence=!overlapsFence(idx,end,fenceRanges);
+            if(boundaryOk&&notInsideFence){
+                return idx;
+            }
+            from=idx+1;
+        }
+        return -1;
+    };
+
     let out = normalize(botResponse ?? "");
 
     const blocks = [...codeBlocks].sort(
@@ -275,8 +331,9 @@ function toFencedMarkdownFromBotResponse(
         code = stripLangHeader(code, lang).trimEnd();
 
         if (!code.trim()) continue;
+        if (code.length < 20 && !code.includes("\n")) continue;
 
-        const idx = out.indexOf(code);
+        const idx = findBestCodeMatch(out, code);
 
         if (idx >= 0) {
             const fenced = `\n\n\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
@@ -384,4 +441,3 @@ function escapeForHtmlTemplate(s: string): string {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 }
-
