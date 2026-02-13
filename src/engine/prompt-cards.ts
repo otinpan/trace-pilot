@@ -7,7 +7,7 @@ import { Metadata,WEB_INFO_SOURCE,GPTHash } from "../constants/types";
 import { getRepositoryPathOrNull } from "../repository/repository";
 import { ensureWorktree } from "../repository/worktree";
 import { PromptCardItem, showPromptCards } from './show-promptcards';
-
+import { restoreTextByHash } from './engine';
 interface PromptMetadata{
   timeCopied: string;
   metaHashes: string[];
@@ -150,12 +150,12 @@ export class PromptCards{
     const pairHash=`${promptHash}:${generatedHash}`;
     await showPromptCards(context,{
       selectedPairHash: pairHash,
-      cards: this.toPromptCardItems(),
+      cards: await this.toPromptCardItems(),
     });
     return true;
   }
 
-  private toPromptCardItems(): PromptCardItem[]{
+  private async toPromptCardItems(): Promise<PromptCardItem[]>{
     const cards: PromptCardItem[]=[];
 
     for(const time of this.times){
@@ -174,9 +174,14 @@ export class PromptCards{
         continue;
       }
 
+      const promptText:string=await restoreTextByHash(promptHash);
+      const generatedText:string=await restoreTextByHash(generatedHash);
+
       cards.push({
         promptHash,
+        promptText,
         generatedHash,
+        generatedText,
         metaHashes: [...pm.metaHashes],
         copiedTime: pm.timeCopied,
         copiedTimeNumber: time,

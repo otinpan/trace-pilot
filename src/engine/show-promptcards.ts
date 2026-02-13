@@ -16,7 +16,9 @@ export interface PromptCardsWebviewData{
 
 export interface PromptCardItem{
   promptHash: string;
+  promptText: string;
   generatedHash: string;
+  generatedText: string;
   metaHashes: string[];
   copiedTime: string;
   copiedTimeNumber: number;

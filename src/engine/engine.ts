@@ -280,16 +280,7 @@ export class TraceEngine{
 
     // hashからテキストの復元
     async restoreTextByHash(hash:string):Promise<string>{
-        const repoPath=await getRepositoryPathOrNull();
-        if(!repoPath){
-            throw new Error("Not a git repository. Open a folder that has .git (or init first).");
-        }
-
-        const worktreePath=path.join(repoPath,".trace-worktree");
-        const blobPath=path.join(worktreePath,"blobs",`${hash}.bin`);
-
-        return fs.readFileSync(blobPath,"utf8");
-        
+        return restoreTextByHash(hash);
     }
 
     // metadataのWEB_INFO_SORUCEを見る
@@ -356,4 +347,16 @@ export class TraceEngine{
     // hover表示
     // 正規表現と一致した行を取り出して、そこからハッシュ値をパースする
 
+}
+
+export async function restoreTextByHash(hash:string):Promise<string>{
+    const repoPath=await getRepositoryPathOrNull();
+    if(!repoPath){
+        throw new Error("Not a git repository. Open a folder that has .git (or init first).");
+    }
+
+    const worktreePath=path.join(repoPath,".trace-worktree");
+    const blobPath=path.join(worktreePath,"blobs",`${hash}.bin`);
+
+    return fs.readFileSync(blobPath,"utf8");
 }
