@@ -143,7 +143,13 @@ export class Container{
 
                     md.appendMarkdown(`**Trace-Pilot**\n\n`);
                     md.appendMarkdown(`- hash: \`${metaHash}\`\n`);
-                    md.appendMarkdown(`\n[Show full text](${cmdUri})\n`);
+                    md.appendMarkdown(`\n[Open source](${cmdUri})\n`);
+                    const type:WEB_INFO_SOURCE=await this.engine.getMetadataType(metaHash);
+                    if(type===WEB_INFO_SOURCE.CHAT_GPT){
+                      const promptCmdUri=`command:trace-pilot.openPromptCards?${args}`;
+                      md.appendMarkdown(`\n[Open PromptCards](${promptCmdUri})\n`);
+                    }
+
 
                     return new Hover(md);
                 }
@@ -180,7 +186,7 @@ export class Container{
 
                     // クリックできる
                     const cmdMeta: Command = {
-                        title: `Trace-Pilot.openInfo`, // CodeLens上に表示されるテキスト
+                        title: `Trace-Pilot: Open source`, // CodeLens上に表示されるテキスト
                         command: "trace-pilot.openMeta", // 実行するコマンドID
                         arguments: [metaHash], // コマンドに渡す引数
                     };
