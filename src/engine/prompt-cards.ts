@@ -6,7 +6,7 @@ import * as path from "path";
 import { Metadata,WEB_INFO_SOURCE,GPTHash } from "../constants/types";
 import { getRepositoryPathOrNull } from "../repository/repository";
 import { ensureWorktree } from "../repository/worktree";
-import { showPromptCards } from './show-promptcards';
+import { PromptCardItem, showPromptCards } from './show-promptcards';
 
 interface PromptMetadata{
   timeCopied: string;
@@ -149,16 +149,41 @@ export class PromptCards{
     const generatedHash=(ah as GPTHash).generatedHash;
     const pairHash=`${promptHash}:${generatedHash}`;
     await showPromptCards(context,{
-      pairHash,
-      timesText: JSON.stringify(this.times,null,2),
-      timesToHashText: JSON.stringify(Object.fromEntries(this.timesToHash),null,2),
-      hashToPromptMetadataText: JSON.stringify(
-        Object.fromEntries(this.hashToPromptMetadata),
-        null,
-        2
-      ),
+      selectedPairHash: pairHash,
+      cards: this.toPromptCardItems(),
     });
     return true;
+  }
+
+  private toPromptCardItems(): PromptCardItem[]{
+    const cards: PromptCardItem[]=[];
+
+    for(const time of this.times){
+      const pairHash=this.timesToHash.get(time);
+      if(!pairHash){
+        continue;
+      }
+
+      const pm=this.hashToPromptMetadata.get(pairHash);
+      if(!pm){
+        continue;
+      }
+
+      const [promptHash,generatedHash]=pairHash.split(":");
+      if(!promptHash||!generatedHash){
+        continue;
+      }
+
+      cards.push({
+        promptHash,
+        generatedHash,
+        metaHashes: [...pm.metaHashes],
+        copiedTime: pm.timeCopied,
+        copiedTimeNumber: time,
+      });
+    }
+
+    return cards;
   }
 
   private lowerBound(arr: number[],x:number):number{

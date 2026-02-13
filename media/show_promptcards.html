@@ -10,17 +10,68 @@
       ">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trace-Pilot PromptCards</title>
+    <style>
+      body{
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 16px;
+      }
+      h1{
+        margin: 0 0 8px 0;
+        font-size: 20px;
+      }
+      #selected-pair{
+        margin: 0 0 16px 0;
+        opacity: 0.85;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        word-break: break-all;
+      }
+      #card-list{
+        display: grid;
+        grid-template-columns: repeat(auto-fill,minmax(320px,1fr));
+        gap: 12px;
+      }
+      .prompt-card{
+        width: 100%;
+        text-align: left;
+        border: 1px solid #555;
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        padding: 12px;
+        cursor: pointer;
+      }
+      .prompt-card:hover{
+        border-color: #999;
+      }
+      .prompt-card.is-selected{
+        border-color: #2d7cff;
+        box-shadow: 0 0 0 2px rgba(45,124,255,0.25);
+      }
+      .card-row{
+        margin: 0 0 8px 0;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .card-label{
+        font-weight: 700;
+      }
+      .card-value{
+        margin-top: 2px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    </style>
   </head>
   <body>
-    <h1>Prompt Cards (Debug)</h1>
-    <h2>pairHash</h2>
-    <pre>{{pairHash}}</pre>
-    <h2>times</h2>
-    <pre>{{timesText}}</pre>
-    <h2>timesToHash</h2>
-    <pre>{{timesToHashText}}</pre>
-    <h2>hashToPromptMetadata</h2>
-    <pre>{{hashToPromptMetadataText}}</pre>
+    <h1>Prompt Cards</h1>
+    <p id="selected-pair">selected pair: {{selectedPairHash}}</p>
+    <div id="card-list"></div>
+    <script nonce="{{nonce}}">
+      window.TRACE_PROMPT_CARDS={{cardsJson}};
+      window.TRACE_SELECTED_PAIR_HASH={{selectedPairHashJson}};
+    </script>
     <script nonce="{{nonce}}" src="{{promptCardsJsUri}}"></script>
   </body>
 </html>

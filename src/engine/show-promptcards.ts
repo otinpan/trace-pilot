@@ -10,10 +10,16 @@ import * as os from "os";
 import * as fs from "fs";
 
 export interface PromptCardsWebviewData{
-  pairHash: string;
-  timesText: string;
-  timesToHashText: string;
-  hashToPromptMetadataText: string;
+  selectedPairHash: string;
+  cards: PromptCardItem[];
+}
+
+export interface PromptCardItem{
+  promptHash: string;
+  generatedHash: string;
+  metaHashes: string[];
+  copiedTime: string;
+  copiedTimeNumber: number;
 }
 
 export async function showPromptCards(
@@ -22,7 +28,7 @@ export async function showPromptCards(
 ):Promise<void>{
   const panel=window.createWebviewPanel(
     "trace-pilot.promptCards",
-    `Trace-Pilot PromptCards: ${data.pairHash.slice(0,8)}`,
+    `Trace-Pilot PromptCards: ${data.selectedPairHash.slice(0,8)}`,
     ViewColumn.Beside,
     {enableScripts: true}
   );
@@ -58,13 +64,12 @@ function webviewContentPromptCards(
   html=replaceAllToken(html,"cspSource",webview.cspSource);
   html=replaceAllToken(html,"promptCardsJsUri",promptCardsJsUri.toString());
   html=replaceAllToken(html,"nonce",nonce);
-  html=replaceAllToken(html,"pairHash",escapeHtml(data.pairHash));
-  html=replaceAllToken(html,"timesText",escapeHtml(data.timesText));
-  html=replaceAllToken(html,"timesToHashText",escapeHtml(data.timesToHashText));
+  html=replaceAllToken(html,"selectedPairHash",escapeHtml(data.selectedPairHash));
+  html=replaceAllToken(html,"cardsJson",escapeForInlineScript(JSON.stringify(data.cards)));
   html=replaceAllToken(
     html,
-    "hashToPromptMetadataText",
-    escapeHtml(data.hashToPromptMetadataText)
+    "selectedPairHashJson",
+    escapeForInlineScript(JSON.stringify(data.selectedPairHash))
   );
 
   return html;
@@ -89,4 +94,12 @@ function escapeHtml(value: string): string{
     .replaceAll("&","&amp;")
     .replaceAll("<","&lt;")
     .replaceAll(">","&gt;");
+}
+
+// json文字列を安全にする
+function escapeForInlineScript(value: string): string{
+  return value
+    .replaceAll("<","\\u003c")
+    .replaceAll(">","\\u003e")
+    .replaceAll("&","\\u0026");
 }
