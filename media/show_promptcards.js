@@ -8,10 +8,11 @@ const list = document.getElementById("card-list");
 let selectedCardElement = null;
 
 if (list) {
-  for (const card of cards) {
+  for (const [index, card] of cards.entries()) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "prompt-card";
+    button.style.setProperty("--card-index", String(index));
     const pairHash = `${card.promptHash}:${card.generatedHash}`;
     if (pairHash === selectedPairHash && !selectedCardElement) {
       button.classList.add("is-selected");

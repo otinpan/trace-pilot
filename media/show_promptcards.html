@@ -11,56 +11,98 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trace-Pilot PromptCards</title>
     <style>
+      :root{
+        --bg-0: #000000;
+        --bg-1: #000000;
+        --bg-2: #000000;
+        --text-main: #eef6fb;
+        --text-sub: #b5ccd9;
+        --card-bg: rgba(255,255,255,0.06);
+        --card-border: rgba(255,255,255,0.22);
+        --card-hover: rgba(255,255,255,0.34);
+        --accent: #4da3ff;
+        --accent-soft: rgba(77,163,255,0.28);
+      }
       body{
-        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-family: "Trebuchet MS", "Gill Sans", "Century Gothic", sans-serif;
         margin: 0;
-        padding: 16px;
+        padding: 20px;
+        color: var(--text-main);
+        min-height: 100vh;
+        background: #000000;
+      }
+      body::before{
+        content: none;
       }
       h1{
-        margin: 0 0 8px 0;
-        font-size: 20px;
+        margin: 0 0 10px 0;
+        font-size: 26px;
+        letter-spacing: 0.4px;
+        text-shadow: 0 1px 10px rgba(0,0,0,0.35);
       }
       #selected-pair{
-        margin: 0 0 16px 0;
-        opacity: 0.85;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        margin: 0 0 18px 0;
+        opacity: 0.95;
+        color: var(--text-sub);
+        font-size: 12px;
+        border: 1px solid rgba(255,255,255,0.22);
+        border-radius: 999px;
+        display: inline-block;
+        padding: 8px 12px;
+        background: rgba(8,20,28,0.38);
+        backdrop-filter: blur(8px);
+        font-family: Consolas, "Courier New", monospace;
         word-break: break-all;
       }
       #card-list{
         display: grid;
-        grid-template-columns: repeat(auto-fill,minmax(320px,1fr));
-        gap: 12px;
+        grid-template-columns: repeat(auto-fill,minmax(340px,1fr));
+        gap: 14px;
       }
       .prompt-card{
         width: 100%;
         text-align: left;
-        border: 1px solid #555;
-        border-radius: 8px;
-        background: transparent;
+        border: 1px solid var(--card-border);
+        border-radius: 14px;
+        background: linear-gradient(180deg, var(--card-bg), rgba(255,255,255,0.02));
         color: inherit;
-        padding: 12px;
+        padding: 14px;
         cursor: pointer;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+        backdrop-filter: blur(8px);
+        transform: translateY(10px) scale(0.99);
+        opacity: 0;
+        animation: card-in 320ms ease-out forwards;
+        animation-delay: calc(var(--card-index, 0) * 34ms);
+        transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
       }
       .prompt-card:hover{
-        border-color: #999;
+        border-color: var(--card-hover);
+        box-shadow: 0 16px 30px rgba(0,0,0,0.28);
+        transform: translateY(-1px) scale(1.005);
       }
       .prompt-card.is-selected{
-        border-color: #2d7cff;
-        box-shadow: 0 0 0 2px rgba(45,124,255,0.25);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent-soft), 0 18px 30px rgba(0,0,0,0.28);
       }
       .card-row{
-        margin: 0 0 8px 0;
+        margin: 0 0 10px 0;
         font-size: 12px;
         line-height: 1.4;
       }
       .card-label{
         font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: #9fd0ff;
+        font-size: 10px;
       }
       .card-value{
         margin-top: 2px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: Consolas, "Courier New", monospace;
         white-space: pre-wrap;
         word-break: break-all;
+        color: #eaf2f7;
       }
       .meta-hash-list{
         margin-top: 6px;
@@ -69,17 +111,34 @@
         gap: 6px;
       }
       .meta-hash-chip{
-        border: 1px solid #666;
+        border: 1px solid rgba(255,255,255,0.34);
         border-radius: 999px;
-        background: transparent;
+        background: rgba(8,20,28,0.54);
         color: inherit;
         padding: 4px 8px;
         cursor: pointer;
         font-size: 11px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: Consolas, "Courier New", monospace;
+        transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
       }
       .meta-hash-chip:hover{
-        border-color: #aaa;
+        border-color: #9fd0ff;
+        background: rgba(77,163,255,0.24);
+        transform: translateY(-1px);
+      }
+      @keyframes card-in{
+        to{
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      @media (max-width: 700px){
+        body{
+          padding: 14px;
+        }
+        #card-list{
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
