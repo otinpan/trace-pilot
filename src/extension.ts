@@ -54,7 +54,9 @@ export async function activate(context: ExtensionContext) {
 
 
 
-export function deactivate() {}
+export async function deactivate() {
+	await Container.disposeInstance();
+}
 
 
 //めも

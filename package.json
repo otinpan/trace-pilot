@@ -31,6 +31,12 @@
       },
       {
         "category": "Trace Pilot",
+        "command": "trace-pilot.flushAll",
+        "title": "save diff",
+        "icon": "$(save)"
+      },
+      {
+        "category": "Trace Pilot",
         "command": "trace-pilot.openMeta",
         "title": "openMeta"
       },
@@ -49,6 +55,11 @@
         },
         {
           "command": "trace-pilot.paste",
+          "group": "navigation",
+          "when": "!virtualWorkspace"
+        },
+        {
+          "command": "trace-pilot.flushAll",
           "group": "navigation",
           "when": "!virtualWorkspace"
         }
@@ -71,6 +82,7 @@
     "validate:metadata": "ts-node tools/validate-schema.ts"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/vscode": "^1.106.1",

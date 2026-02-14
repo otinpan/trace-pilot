@@ -25,7 +25,7 @@ import { ensureWorktree } from './repository/worktree';
 import { getRepositoryPathOrNull } from './repository/repository';
 export class Container{
     // プロジェクト内でインスタンスを1つに限定
-    static #instance: Container;
+    static #instance: Container | undefined;
     private readonly engine: TraceEngine;
     private readonly disposables: Disposable[]=[];
     // disposable
@@ -50,6 +50,7 @@ export class Container{
         this.enableOpenMetaCommand();
         this.enableOpenPromptCardsCommand();
         this.enableWorktreeWatcher();
+        this.enableDiffTracer();
     }
 
     // 非同期的な初期化処理
@@ -59,6 +60,15 @@ export class Container{
         }
 
         return Container.#instance;
+    }
+
+    public static async disposeInstance(): Promise<void>{
+      if(!Container.#instance){
+        return;
+      }
+
+      await Container.#instance.dispose();
+      Container.#instance=undefined;
     }
 
     // getter
@@ -310,5 +320,20 @@ export class Container{
 
       this.context.subscriptions.push(watcher);
     }
-}
 
+    private enableDiffTracer(){
+      const traceDisposables=this.engine.enableDiffTracer();
+      for(const disposable of traceDisposables){
+        this.context.subscriptions.push(disposable);
+        this.disposables.push(disposable);
+      }
+    }
+
+    public async dispose(): Promise<void>{
+      await this.engine.shutdown();
+      for(const disposable of this.disposables){
+        disposable.dispose();
+      }
+      this.disposables.length=0;
+    }
+}

@@ -39,16 +39,56 @@ import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-an
 import { setEngine } from 'crypto';
 import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf, showFullMdAndHighlightMd } from './show-information';
 import { PromptCards } from './prompt-cards';
+import { DiffTracer } from './diff-tracer'; 
 
 export class TraceEngine{
     public highlightDeco?: TextEditorDecorationType;
     public promptCards: PromptCards;
+    private diffTracer: DiffTracer;
+    private diffTracerDisposables: Disposable[]=[];
     constructor(
         private readonly context: ExtensionContext
     ){
       this.promptCards=new PromptCards();
       void this.promptCards.remakePromptCards();
+
+      this.diffTracer=new DiffTracer(this.context);
     };
+
+    enableDiffTracer(): Disposable[]{
+        if(this.diffTracerDisposables.length>0){
+            return this.diffTracerDisposables;
+        }
+
+        for(const doc of workspace.textDocuments){
+            this.diffTracer.ensureSnapshot(doc);
+        }
+
+        const openDisposable=workspace.onDidOpenTextDocument((doc)=>{
+            this.diffTracer.ensureSnapshot(doc);
+        });
+        const changeDisposable=workspace.onDidChangeTextDocument((event)=>{
+            this.diffTracer.onChange(event);
+        });
+        const closeDisposable=workspace.onDidCloseTextDocument((doc)=>{
+            this.diffTracer.onClose(doc);
+        });
+        const flushDisposable=commands.registerCommand("trace-pilot.flushAll",async()=>{
+            await this.diffTracer.flushAll("manual");
+        });
+
+        this.diffTracerDisposables.push(
+            openDisposable,
+            changeDisposable,
+            closeDisposable,
+            flushDisposable,
+        );
+        return this.diffTracerDisposables;
+    }
+
+    async shutdown(): Promise<void>{
+        await this.diffTracer.shutdownAndClear();
+    }
 
     async VSCodeCopy(): Promise<boolean>{
         // ctr+cを行う
