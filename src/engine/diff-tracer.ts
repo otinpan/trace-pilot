@@ -53,10 +53,12 @@ interface PendingBatch{
 const BURST_IDLE_MS=2000;
 const MAX_DIFF_CHARS=200_000;
 
+
 export class DiffTracer{
   private snapshots=new Map<UriKey,Snapshot>(); // 現在のファイルを保存
   private pending=new Map<UriKey,PendingBatch>(); // flushまでの変更を保存 -> flust -> del
-
+  private suppress=new Set<UriKey>();
+  private lastRecord: EditBurstRecord | null=null;
   constructor(private readonly ctx: vscode.ExtensionContext){
 
   }
@@ -108,9 +110,11 @@ export class DiffTracer{
     const doc=e.document;
     if(!this.shouldTrackDocument(doc))return;
 
-    this.ensureSnapshot(doc);
-
     const key=doc.uri.toString();
+    // stickLinkのイベントで呼ばれないようにする
+    if(this.suppress.has(key))return;
+
+    this.ensureSnapshot(doc);
 
     const changeRecords: ChangeRecord[]=e.contentChanges.map((c)=>({
       range:{
@@ -200,6 +204,8 @@ export class DiffTracer{
     };
 
     await this.appendJsonl(record);
+    
+    this.lastRecord=record;
 
     this.snapshots.set(key,{text:after,version: doc.version, ts: Date.now()});
     this.pending.delete(key);
@@ -226,6 +232,40 @@ export class DiffTracer{
     if(!file)return;
     const dir=path.dirname(file);
     await fs.promises.rm(dir,{recursive:true,force:true});
+  }
+
+  async stickLink(): Promise<void>{
+    if(!this.lastRecord)return;
+
+    const record=this.lastRecord;
+
+    const doc=vscode.workspace.textDocuments.find(
+      d=>d.uri.fsPath===record.uri
+    );
+
+    if(!doc)return;
+    const key=doc.uri.toString();
+
+    let topLine=Number.POSITIVE_INFINITY;
+    for(const c of record.changes){
+      topLine=Math.min(topLine,c.range.start.line);
+    }
+
+    if(!Number.isFinite(topLine))return;
+
+    const hash:string="x0123456789";
+    const insertText=`// @trace-pilot ${hash}\n`;
+
+    try{
+      this.suppress.add(key);
+
+      const edit=new vscode.WorkspaceEdit();
+      edit.insert(doc.uri,new vscode.Position(topLine,0),insertText);
+      await vscode.workspace.applyEdit(edit);
+    }finally{
+      // 次のループで削除
+      setTimeout(()=>this.suppress.delete(key),0);
+    }
   }
 
 }

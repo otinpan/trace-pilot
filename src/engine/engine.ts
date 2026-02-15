@@ -76,12 +76,16 @@ export class TraceEngine{
         const flushDisposable=commands.registerCommand("trace-pilot.flushAll",async()=>{
             await this.diffTracer.flushAll("manual");
         });
+        const guessPromptDisposable=commands.registerCommand("trace-pilot.guess-prompt",async()=>{
+          await this.diffTracer.stickLink();
+        })
 
         this.diffTracerDisposables.push(
             openDisposable,
             changeDisposable,
             closeDisposable,
             flushDisposable,
+            guessPromptDisposable,
         );
         return this.diffTracerDisposables;
     }
