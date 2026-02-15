@@ -49,6 +49,10 @@ interface PendingBatch{
   timer?: NodeJS.Timeout;
 };
 
+interface HunkTarget{
+  line0: number;
+}
+
 
 const BURST_IDLE_MS=2000;
 const MAX_DIFF_CHARS=200_000;
@@ -242,32 +246,123 @@ export class DiffTracer{
     const doc=vscode.workspace.textDocuments.find(
       d=>d.uri.fsPath===record.uri
     );
-
     if(!doc)return;
     const key=doc.uri.toString();
 
-    let topLine=Number.POSITIVE_INFINITY;
-    for(const c of record.changes){
-      topLine=Math.min(topLine,c.range.start.line);
+    // TRUNCATED だとhunkが取れない
+    if(record.diff_unified.includes("...TRUNCATED...")){
+      vscode.window.showWarningMessage("diff_unified is truncated: some hunks may be missing");
     }
 
-    if(!Number.isFinite(topLine))return;
+    const targets:HunkTarget[]=parseHunkTargetsFromUnifiedDiff(record.diff_unified);
+    if(targets.length===0)return;
 
-    const hash:string="x0123456789";
-    const insertText=`// @trace-pilot ${hash}\n`;
-
+    targets.sort((a,b)=>b.line0-a.line0);
     try{
       this.suppress.add(key);
 
-      const edit=new vscode.WorkspaceEdit();
-      edit.insert(doc.uri,new vscode.Position(topLine,0),insertText);
+      const edit= new vscode.WorkspaceEdit();
+
+      for(const t of targets){
+        const line0=Math.max(0,Math.min(t.line0, doc.lineCount));
+
+        const hash:string="x0123456789";
+        const insertText=`// @trace-pilot ${hash}\n`;
+        edit.insert(doc.uri,new vscode.Position(line0,0),insertText);
+      }
+
       await vscode.workspace.applyEdit(edit);
     }finally{
-      // 次のループで削除
       setTimeout(()=>this.suppress.delete(key),0);
+    }
+
+  }
+
+}
+
+// diff_unifiedから変更された最上行を計算
+function parseHunkTargetsFromUnifiedDiff(diff:string):HunkTarget[]{
+  const lines=diff.split("\n");
+  const targets: HunkTarget[]=[];
+
+  let i=0;
+
+  // 先頭で無視する行
+  const isIgnorableChangedLine=(diffLine: string)=>{
+    const body=diffLine.slice(1);
+    const trimmed=body.trim();
+
+    if(trimmed==="")return true;
+
+    if(trimmed.startsWith("// @trace-pilot")) return true;
+
+      return false;
+  };
+
+  while(i<lines.length){
+    const header=lines[i];
+    if(!header.startsWith("@@")){
+      i++;
+      continue;
+    }
+
+    const m = header.match(/@@\s*-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s*@@/);
+    if(!m){
+      i++;
+      continue;
+    }
+
+    // 編集後の位置
+    let afterLine0=parseInt(m[1],10)-1;
+
+    // +/-の行にいるか
+    let inChangeBlock=false;
+
+    // 編集ブロックの中にいるか
+    let emittedForThisBlock=false;
+
+    i++;
+    while(i<lines.length&&!lines[i].startsWith("@@")){
+      const l=lines[i];
+
+      // ファイルヘッダをskip
+      if(l.startsWith("+++ ")||l.startsWith("--- ")){
+        i++;
+        continue;
+      }
+
+      const isPlus=l.startsWith("+");
+      const isMinus=l.startsWith("-");
+      const isContext=l.startsWith(" ");
+
+      if(isPlus){
+        if(!inChangeBlock){
+          inChangeBlock=true;
+          emittedForThisBlock=false;
+        }
+
+        if(!emittedForThisBlock&&!isIgnorableChangedLine(l)){
+          targets.push({line0: afterLine0});
+          emittedForThisBlock=true;
+        }
+      }
+      
+      if(isPlus){
+        afterLine0++;
+      }else if(isMinus){
+        
+      }else{
+        inChangeBlock=false;
+        emittedForThisBlock=false;
+        afterLine0++;
+      }
+      i++;
     }
   }
 
+  const uniq=new Map<number,HunkTarget>();
+  for(const t of targets) if(!uniq.has(t.line0)) uniq.set(t.line0,t);
+  return [...uniq.values()];
 }
 
 
