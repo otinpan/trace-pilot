@@ -2,8 +2,6 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import {createTwoFilesPatch} from "diff";
-import { log } from "console";
-import { NumberLiteralType } from "typescript";
 
 type UriKey=string;
 
@@ -41,6 +39,12 @@ interface EditBurstRecord{
   changes: ChangeRecord[];
   diff_unified: string;
 }
+
+interface FileCreatedRecord{
+  type: "file_created";
+  uri: string;
+  ts: number;
+}
 // burstごとに空になる
 interface PendingBatch{
   changes: ChangeRecord[];
@@ -56,23 +60,28 @@ interface HunkTarget{
 
 const BURST_IDLE_MS=2000;
 const MAX_DIFF_CHARS=200_000;
+const CREATED_DEDUPE_WINDOW_MS=1000;
 
 
 export class DiffTracer{
   private snapshots=new Map<UriKey,Snapshot>(); // 現在のファイルを保存
   private pending=new Map<UriKey,PendingBatch>(); // flushまでの変更を保存 -> flust -> del
-  private suppress=new Set<UriKey>();
-  private lastRecord: EditBurstRecord | null=null;
+  private suppress=new Set<UriKey>(); // stickLinkによる編集を無視する
+  private lastRecords= new Map<UriKey,EditBurstRecord>();
+  private recentCreatedAt=new Map<UriKey,number>();
   constructor(private readonly ctx: vscode.ExtensionContext){
 
   }
 
   private shouldTrackDocument(doc: vscode.TextDocument): boolean{
     if(doc.isUntitled)return false;
-    if(doc.uri.scheme!=="file")return false;
+    return this.shouldTrackUri(doc.uri);
+  }
 
+  private shouldTrackUri(uri: vscode.Uri): boolean{
+    if(uri.scheme!=="file")return false;
     // Avoid tracing tracer output itself to prevent recursive flush loops.
-    const normalized=doc.uri.fsPath.replace(/\\/g,"/");
+    const normalized=uri.fsPath.replace(/\\/g,"/");
     if(normalized.includes("/.intent-tracer/"))return false;
     return true;
   }
@@ -109,6 +118,32 @@ export class DiffTracer{
     this.pending.delete(key);
     this.snapshots.delete(key);
   }
+
+  async onCreate(e: vscode.FileCreateEvent): Promise<void>{
+    await this.recordCreatedUris(e.files);
+  }
+
+  async onFsCreate(uri: vscode.Uri): Promise<void>{
+    await this.recordCreatedUris([uri]);
+  }
+
+  private async recordCreatedUris(uris: readonly vscode.Uri[]): Promise<void>{
+    const now=Date.now();
+    for(const uri of uris){
+      if(!this.shouldTrackUri(uri))continue;
+      const key=uri.toString();
+      const lastTs=this.recentCreatedAt.get(key);
+      if(lastTs&&now-lastTs<CREATED_DEDUPE_WINDOW_MS)continue;
+      this.recentCreatedAt.set(key,now);
+      const record: FileCreatedRecord={
+        type: "file_created",
+        uri: uri.fsPath,
+        ts: now,
+      };
+      await this.appendJsonl(record);
+    }
+  }
+
   // 変更されたときに呼ばれる
   onChange(e: vscode.TextDocumentChangeEvent){
     const doc=e.document;
@@ -209,10 +244,12 @@ export class DiffTracer{
 
     await this.appendJsonl(record);
     
-    this.lastRecord=record;
+    this.lastRecords.set(key,record);
 
     this.snapshots.set(key,{text:after,version: doc.version, ts: Date.now()});
     this.pending.delete(key);
+
+    vscode.window.showInformationMessage("Trace-Pilot: flush",doc.uri.fsPath);
   }
 
 
@@ -238,16 +275,23 @@ export class DiffTracer{
     await fs.promises.rm(dir,{recursive:true,force:true});
   }
 
-  async stickLink(): Promise<void>{
-    if(!this.lastRecord)return;
+  async stickAllLink():Promise<void>{
+    if(this.lastRecords.size===0)return;
+    for(const key of this.lastRecords.keys()){
+      await this.stickLink(key);
+    }
+    return;
+  }
 
-    const record=this.lastRecord;
+  async stickLink(uriKey: string): Promise<void>{
+    const record=this.lastRecords.get(uriKey);
+    if(!record)return;
 
     const doc=vscode.workspace.textDocuments.find(
-      d=>d.uri.fsPath===record.uri
+      d=>d.uri.toString()===uriKey
     );
     if(!doc)return;
-    const key=doc.uri.toString();
+    const key=uriKey;
 
     // TRUNCATED だとhunkが取れない
     if(record.diff_unified.includes("...TRUNCATED...")){
@@ -271,6 +315,7 @@ export class DiffTracer{
         edit.insert(doc.uri,new vscode.Position(line0,0),insertText);
       }
 
+      this.lastRecords.delete(key); // @trace-pilotが2重に書けないようにする
       await vscode.workspace.applyEdit(edit);
     }finally{
       setTimeout(()=>this.suppress.delete(key),0);
@@ -278,7 +323,7 @@ export class DiffTracer{
 
   }
 
-}
+} // @trace-piが2重に書けないようにする
 
 // diff_unifiedから変更された最上行を計算
 function parseHunkTargetsFromUnifiedDiff(diff:string):HunkTarget[]{

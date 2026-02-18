@@ -67,6 +67,13 @@ export class TraceEngine{
         const openDisposable=workspace.onDidOpenTextDocument((doc)=>{
             this.diffTracer.ensureSnapshot(doc);
         });
+        const createDisposable=workspace.onDidCreateFiles((event)=>{
+            void this.diffTracer.onCreate(event);
+        });
+        const externalCreateWatcher=workspace.createFileSystemWatcher("**/*",false,true,true);
+        externalCreateWatcher.onDidCreate((uri)=>{
+            void this.diffTracer.onFsCreate(uri);
+        });
         const changeDisposable=workspace.onDidChangeTextDocument((event)=>{
             this.diffTracer.onChange(event);
         });
@@ -77,11 +84,13 @@ export class TraceEngine{
             await this.diffTracer.flushAll("manual");
         });
         const guessPromptDisposable=commands.registerCommand("trace-pilot.guess-prompt",async()=>{
-          await this.diffTracer.stickLink();
-        })
+          await this.diffTracer.stickAllLink();
+        });
 
         this.diffTracerDisposables.push(
             openDisposable,
+            createDisposable,
+            externalCreateWatcher,
             changeDisposable,
             closeDisposable,
             flushDisposable,
