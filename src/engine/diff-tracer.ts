@@ -1,115 +1,168 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import {createTwoFilesPatch} from "diff";
+import { createTwoFilesPatch } from "diff";
 
-type UriKey=string;
+type UriKey = string;
 
-interface Snapshot{
-  text:string;
+interface Snapshot {
+  text: string;
   version: number;
-  ts: number; 
-};
+  ts: number;
+}
 
-interface ChangeRecord{
+interface ChangeRecord {
   range: {
-    start:{line: number; character: number};
-    end:{line: number; character:number};
-  }; // どこが変更されたか
-  rangeOffset: number; // 何文字目か
-  rangeLength: number; // 何文字が変更されたか
-  text: string; // 挿入テキスト
-};
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  rangeOffset: number;
+  rangeLength: number;
+  text: string;
+}
 
-interface EditBurstRecord{
+interface EditBurstRecord {
   type: "edit_burst";
   uri: string;
   languageId: string;
-  ts_start: number; //startのtimestamp
-  ts_end: number; // endのtimestamp
-  before_version: number; // 変更ごとにversionが更新される
+  ts_start: number;
+  ts_end: number;
+  before_version: number;
   after_version: number;
-  stats:{
-    changeCount: number; // このburstで何文字変化したか
+  stats: {
+    changeCount: number;
     insertedChars: number;
     deletedChars: number;
-    insertedLinesApprox: number; // このburstで何行くらい増えたか
+    insertedLinesApprox: number;
     deletedLinesApprox: number;
   };
   changes: ChangeRecord[];
   diff_unified: string;
 }
 
-interface FileCreatedRecord{
+interface FileCreatedRecord {
   type: "file_created";
   uri: string;
   ts: number;
+  diff_unified?: string;
 }
-// burstごとに空になる
-interface PendingBatch{
+
+interface PendingBatch {
   changes: ChangeRecord[];
   ts_start: number;
   ts_last: number;
   timer?: NodeJS.Timeout;
-};
+}
 
-interface HunkTarget{
+interface ExternalSnapshot {
+  text: string;
+  ts: number;
+}
+interface ExternalPending {
+  ts_start: number;
+  ts_last: number;
+  timer?: NodeJS.Timeout;
+}
+
+interface HunkTarget {
   line0: number;
 }
 
+interface LinkableRecord {
+  uri: string;
+  diff_unified: string;
+}
 
-const BURST_IDLE_MS=2000;
-const MAX_DIFF_CHARS=200_000;
-const CREATED_DEDUPE_WINDOW_MS=1000;
+const BURST_IDLE_MS = 2000;
+const EXTERNAL_BURST_IDLE_MS = 500;
+const MAX_DIFF_CHARS = 200_000;
+const CREATED_DEDUPE_WINDOW_MS = 1000;
 
+const IGNORE_PATH_PARTS = [
+  "/.git/",
+  "/node_modules/",
+  "/target/",
+  "/dist/",
+  "/out/",
+  "/.next/",
+  "/.cache/",
+  "/.intent-tracer/",
+];
 
-export class DiffTracer{
-  private snapshots=new Map<UriKey,Snapshot>(); // 現在のファイルを保存
-  private pending=new Map<UriKey,PendingBatch>(); // flushまでの変更を保存 -> flust -> del
-  private suppress=new Set<UriKey>(); // stickLinkによる編集を無視する
-  private lastRecords= new Map<UriKey,EditBurstRecord>();
-  private recentCreatedAt=new Map<UriKey,number>();
-  constructor(private readonly ctx: vscode.ExtensionContext){
+const STICK_LANGUAGE_ALLOWLIST = new Set([
+  "typescript",
+  "javascript",
+  "typescriptreact",
+  "javascriptreact",
+  "rust",
+  "c",
+  "cpp",
+  "csharp",
+  "go",
+  "java",
+  "python",
+  "lua",
+]);
 
+export class DiffTracer {
+  private snapshots = new Map<UriKey, Snapshot>();
+  private pending = new Map<UriKey, PendingBatch>();
+  private suppress = new Set<UriKey>();
+  private lastRecords = new Map<UriKey, LinkableRecord>();
+  private recentCreatedAt = new Map<UriKey, number>();
+
+  private externalSnapshots = new Map<UriKey, ExternalSnapshot>();
+  private externalPending = new Map<UriKey, ExternalPending>();
+
+  constructor(private readonly ctx: vscode.ExtensionContext) {}
+
+  private normalizePath(p: string): string {
+    return p.replace(/\\/g, "/");
   }
 
-  private shouldTrackDocument(doc: vscode.TextDocument): boolean{
-    if(doc.isUntitled)return false;
-    return this.shouldTrackUri(doc.uri);
-  }
-
-  private shouldTrackUri(uri: vscode.Uri): boolean{
-    if(uri.scheme!=="file")return false;
-    // Avoid tracing tracer output itself to prevent recursive flush loops.
-    const normalized=uri.fsPath.replace(/\\/g,"/");
-    if(normalized.includes("/.intent-tracer/"))return false;
+  private shouldTrackUri(uri: vscode.Uri): boolean {
+    if (uri.scheme !== "file") return false;
+    const normalized = this.normalizePath(uri.fsPath);
+    for (const part of IGNORE_PATH_PARTS) {
+      if (normalized.includes(part)) return false;
+    }
     return true;
   }
 
-  ensureSnapshot(doc: vscode.TextDocument){
-    if(!this.shouldTrackDocument(doc))return;
+  private shouldTrackDocument(doc: vscode.TextDocument): boolean {
+    if (doc.isUntitled) return false;
+    return this.shouldTrackUri(doc.uri);
+  }
 
-    const key=doc.uri.toString();
-    if(!this.snapshots.has(key)){
-      this.snapshots.set(
-        key,
-        {
-          text: doc.getText(),
-          version: doc.version,
-          ts: Date.now(),
-        }
-      );
+  private shouldStickLinkDocument(doc: vscode.TextDocument): boolean {
+    if (!STICK_LANGUAGE_ALLOWLIST.has(doc.languageId)) return false;
+
+    const normalized = this.normalizePath(doc.uri.fsPath);
+    if (normalized.includes("/.vscode/")) return false;
+    if (normalized.includes("/.devcontainer/")) return false;
+
+    const head = doc.getText(new vscode.Range(0, 0, Math.min(30, doc.lineCount), 0));
+    if (head.includes("DO NOT EDIT") || head.includes("@generated") || head.includes("Generated by")) {
+      return false;
+    }
+    return true;
+  }
+
+  ensureSnapshot(doc: vscode.TextDocument) {
+    if (!this.shouldTrackDocument(doc)) return;
+    const key = doc.uri.toString();
+    if (!this.snapshots.has(key)) {
+      this.snapshots.set(key, { text: doc.getText(), version: doc.version, ts: Date.now() });
     }
   }
 
-  onClose(doc: vscode.TextDocument){
-    if(!this.shouldTrackDocument(doc))return;
+  onClose(doc: vscode.TextDocument) {
+    if (!this.shouldTrackDocument(doc)) return;
+    const key = doc.uri.toString();
 
-    const key=doc.uri.toString();
-    
-    const batch=this.pending.get(key);
-    if(batch&&batch.changes.length>0){
-      void this.flush(doc,"close").finally(()=>{
+    const batch = this.pending.get(key);
+    if (batch && batch.changes.length > 0) {
+      void this.flush(doc, "close").finally(() => {
         this.snapshots.delete(key);
       });
       return;
@@ -119,106 +172,240 @@ export class DiffTracer{
     this.snapshots.delete(key);
   }
 
-  async onCreate(e: vscode.FileCreateEvent): Promise<void>{
+  async onCreate(e: vscode.FileCreateEvent): Promise<void> {
     await this.recordCreatedUris(e.files);
   }
 
-  async onFsCreate(uri: vscode.Uri): Promise<void>{
+  async onFsCreate(uri: vscode.Uri): Promise<void> {
+    if (!this.shouldTrackUri(uri)) return;
     await this.recordCreatedUris([uri]);
+
+    const key = uri.toString();
+    setTimeout(() => {
+      void this.refreshExternalBaseline(uri, key);
+    }, 80);
   }
 
-  private async recordCreatedUris(uris: readonly vscode.Uri[]): Promise<void>{
-    const now=Date.now();
-    for(const uri of uris){
-      if(!this.shouldTrackUri(uri))continue;
-      const key=uri.toString();
-      const lastTs=this.recentCreatedAt.get(key);
-      if(lastTs&&now-lastTs<CREATED_DEDUPE_WINDOW_MS)continue;
-      this.recentCreatedAt.set(key,now);
-      const record: FileCreatedRecord={
+  private async refreshExternalBaseline(uri: vscode.Uri, key: UriKey): Promise<void> {
+    const liveDoc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+    if (liveDoc) return;
+
+    let text: string;
+    try {
+      text = await fs.promises.readFile(uri.fsPath, { encoding: "utf8" });
+    } catch {
+      return;
+    }
+    if (hasNullByte(text)) return;
+
+    this.externalSnapshots.set(key, { text, ts: Date.now() });
+  }
+
+  onFsChange(uri: vscode.Uri): void {
+    if (!this.shouldTrackUri(uri)) return;
+    const key = uri.toString();
+
+    const liveDoc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+    if (liveDoc) return;
+
+    const now = Date.now();
+    let batch = this.externalPending.get(key);
+    if (!batch) {
+      batch = { ts_start: now, ts_last: now };
+      this.externalPending.set(key, batch);
+    } else {
+      batch.ts_last = now;
+    }
+
+    if (batch.timer) clearTimeout(batch.timer);
+    batch.timer = setTimeout(() => {
+      void this.flushExternal(uri, key);
+    }, EXTERNAL_BURST_IDLE_MS);
+  }
+
+  onFsDelete(uri: vscode.Uri): void {
+    if (!this.shouldTrackUri(uri)) return;
+    const key = uri.toString();
+    const p = this.externalPending.get(key);
+    if (p?.timer) clearTimeout(p.timer);
+    this.externalPending.delete(key);
+    this.externalSnapshots.delete(key);
+  }
+
+  private async flushExternal(uri: vscode.Uri, key: UriKey): Promise<void> {
+    const batch = this.externalPending.get(key);
+    if (!batch) return;
+    if (batch.timer) clearTimeout(batch.timer);
+    this.externalPending.delete(key);
+
+    const liveDoc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+    if (liveDoc) return;
+
+    let after: string;
+    try {
+      after = await fs.promises.readFile(uri.fsPath, { encoding: "utf8" });
+    } catch {
+      return;
+    }
+    if (hasNullByte(after)) return;
+
+    const beforeSnap = this.externalSnapshots.get(key);
+    const before = beforeSnap?.text ?? "";
+
+    if (before === after) return;
+
+    const diff = createTwoFilesPatch(
+      path.basename(uri.fsPath) + " (before)",
+      path.basename(uri.fsPath) + " (after)",
+      before,
+      after,
+      "snapshot",
+      "external"
+    );
+
+    const change: ChangeRecord = {
+      range: { start: { line: 0, character: 0 }, end: { line: countNewlines(before), character: 0 } },
+      rangeOffset: 0,
+      rangeLength: before.length,
+      text: after,
+    };
+
+    const stats = estimateStats([change]);
+
+    const record: EditBurstRecord = {
+      type: "edit_burst",
+      uri: uri.fsPath,
+      languageId: inferLanguageId(uri),
+      ts_start: batch.ts_start,
+      ts_end: batch.ts_last,
+      before_version: -1,
+      after_version: -1,
+      stats,
+      changes: [change],
+      diff_unified:
+        diff.length > MAX_DIFF_CHARS ? diff.slice(0, MAX_DIFF_CHARS) + "\n...TRUNCATED...\n" : diff,
+    };
+
+    await this.appendJsonl(record);
+    this.lastRecords.set(key, { uri: record.uri, diff_unified: record.diff_unified });
+    this.externalSnapshots.set(key, { text: after, ts: Date.now() });
+  }
+
+  private async recordCreatedUris(uris: readonly vscode.Uri[]): Promise<void> {
+    const now = Date.now();
+    for (const uri of uris) {
+      if (!this.shouldTrackUri(uri)) continue;
+      const key = uri.toString();
+      const lastTs = this.recentCreatedAt.get(key);
+      if (lastTs && now - lastTs < CREATED_DEDUPE_WINDOW_MS) continue;
+
+      this.recentCreatedAt.set(key, now);
+      let diffUnified: string | undefined;
+      try {
+        const text = await fs.promises.readFile(uri.fsPath, { encoding: "utf8" });
+        if (!hasNullByte(text) && text.length > 0) {
+          const createdDiff = createTwoFilesPatch(
+            path.basename(uri.fsPath) + " (before)",
+            path.basename(uri.fsPath) + " (after)",
+            "",
+            text,
+            "snapshot",
+            "create"
+          );
+          diffUnified =
+            createdDiff.length > MAX_DIFF_CHARS
+              ? createdDiff.slice(0, MAX_DIFF_CHARS) + "\n...TRUNCATED...\n"
+              : createdDiff;
+        }
+      } catch {
+        // create直後で未書き込み/未同期なケースは diff_unified なしで記録する
+      }
+
+      const record: FileCreatedRecord = {
         type: "file_created",
         uri: uri.fsPath,
         ts: now,
+        diff_unified: diffUnified,
       };
       await this.appendJsonl(record);
+      if (diffUnified) {
+        this.lastRecords.set(key, { uri: uri.fsPath, diff_unified: diffUnified });
+      }
     }
   }
 
-  // 変更されたときに呼ばれる
-  onChange(e: vscode.TextDocumentChangeEvent){
-    const doc=e.document;
-    if(!this.shouldTrackDocument(doc))return;
+  onChange(e: vscode.TextDocumentChangeEvent) {
+    const doc = e.document;
+    if (!this.shouldTrackDocument(doc)) return;
 
-    const key=doc.uri.toString();
-    // stickLinkのイベントで呼ばれないようにする
-    if(this.suppress.has(key))return;
+    const key = doc.uri.toString();
+    if (this.suppress.has(key)) return;
 
     this.ensureSnapshot(doc);
 
-    const changeRecords: ChangeRecord[]=e.contentChanges.map((c)=>({
-      range:{
-        start: {line: c.range.start.line, character: c.range.start.character},
-        end: {line: c.range.end.line, character: c.range.end.character},
+    const changeRecords: ChangeRecord[] = e.contentChanges.map((c) => ({
+      range: {
+        start: { line: c.range.start.line, character: c.range.start.character },
+        end: { line: c.range.end.line, character: c.range.end.character },
       },
       rangeOffset: c.rangeOffset,
       rangeLength: c.rangeLength,
       text: c.text,
     }));
 
-    const now=Date.now();
-    let batch=this.pending.get(key);
-    if(!batch){
-      batch={changes: [], ts_start: now, ts_last: now};
-      this.pending.set(key,batch);
+    const now = Date.now();
+    let batch = this.pending.get(key);
+    if (!batch) {
+      batch = { changes: [], ts_start: now, ts_last: now };
+      this.pending.set(key, batch);
     }
     batch.changes.push(...changeRecords);
-    batch.ts_last=now;
+    batch.ts_last = now;
 
-    if(batch.timer)clearTimeout(batch.timer); // idleタイマーをキャンセル
-    batch.timer=setTimeout(()=>{
-      const liveDoc=vscode.workspace.textDocuments.find((d)=>d.uri.toString()===key);
-      if(liveDoc)void this.flush(liveDoc,"idle");
-    },BURST_IDLE_MS);
+    if (batch.timer) clearTimeout(batch.timer);
+    batch.timer = setTimeout(() => {
+      const liveDoc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+      if (liveDoc) void this.flush(liveDoc, "idle");
+    }, BURST_IDLE_MS);
   }
 
-  async flushAll(reason: "manual" | "shutdown", notify=true){
-    for(const doc of vscode.workspace.textDocuments){
-      const key=doc.uri.toString();
-      const batch=this.pending.get(key);
-      if(batch && batch.changes.length>0){
-        await this.flush(doc,reason);
+  async flushAll(reason: "manual" | "shutdown", notify = true) {
+    for (const doc of vscode.workspace.textDocuments) {
+      const key = doc.uri.toString();
+      const batch = this.pending.get(key);
+      if (batch && batch.changes.length > 0) {
+        await this.flush(doc, reason);
       }
     }
 
-    if(notify){
+    if (notify) {
       vscode.window.showInformationMessage(`Trace Pilot: flushed all (${reason})`);
     }
   }
 
-  async shutdownAndClear(): Promise<void>{
-    await this.flushAll("shutdown",false);
+  async shutdownAndClear(): Promise<void> {
+    await this.flushAll("shutdown", false);
     await this.removeTracerDir();
   }
 
-  private async flush(doc: vscode.TextDocument, reason: "idle"|"close"|"manual"|"shutdown"){
-    const key=doc.uri.toString();
-    const batch=this.pending.get(key);
-    if(!batch||batch.changes.length===0)return;
+  private async flush(doc: vscode.TextDocument, reason: "idle" | "close" | "manual" | "shutdown") {
+    const key = doc.uri.toString();
+    const batch = this.pending.get(key);
+    if (!batch || batch.changes.length === 0) return;
 
-    if(batch.timer)clearTimeout(batch.timer);
-    
-    const snap=this.snapshots.get(key);
-    if(!snap)return;
+    if (batch.timer) clearTimeout(batch.timer);
 
-    const before=snap.text;
-    const after=doc.getText();
+    const snap = this.snapshots.get(key);
+    if (!snap) return;
 
-    if(before===after){
+    const before = snap.text;
+    const after = doc.getText();
+    if (before === after) {
       this.pending.delete(key);
       return;
     }
 
-    const diff=createTwoFilesPatch(
+    const diff = createTwoFilesPatch(
       path.basename(doc.fileName) + " (before)",
       path.basename(doc.fileName) + " (after)",
       before,
@@ -227,9 +414,9 @@ export class DiffTracer{
       reason
     );
 
-    const stats=estimateStats(batch.changes);
+    const stats = estimateStats(batch.changes);
 
-    const record:EditBurstRecord={
+    const record: EditBurstRecord = {
       type: "edit_burst",
       uri: doc.uri.fsPath,
       languageId: doc.languageId,
@@ -239,206 +426,187 @@ export class DiffTracer{
       after_version: doc.version,
       stats,
       changes: batch.changes,
-      diff_unified: diff.length > MAX_DIFF_CHARS ? diff.slice(0, MAX_DIFF_CHARS) + "\n...TRUNCATED... \n" : diff,
+      diff_unified:
+        diff.length > MAX_DIFF_CHARS ? diff.slice(0, MAX_DIFF_CHARS) + "\n...TRUNCATED...\n" : diff,
     };
 
     await this.appendJsonl(record);
-    
-    this.lastRecords.set(key,record);
+    this.lastRecords.set(key, { uri: record.uri, diff_unified: record.diff_unified });
 
-    this.snapshots.set(key,{text:after,version: doc.version, ts: Date.now()});
+    this.snapshots.set(key, { text: after, version: doc.version, ts: Date.now() });
     this.pending.delete(key);
-
-    vscode.window.showInformationMessage("Trace-Pilot: flush",doc.uri.fsPath);
   }
 
-
-  private async appendJsonl(obj: unknown){
-    const file=this.getEventsFilePath();
-    if(!file)return;
-
-    await fs.promises.mkdir(path.dirname(file),{recursive:true});
-    const line=JSON.stringify(obj)+"\n";
-    await fs.promises.appendFile(file,line,{encoding: "utf8"});
-  }
-
-  private getEventsFilePath(): string | null{
-    const ws=vscode.workspace.workspaceFolders?.[0];
-    if(!ws)return null;
-    return path.join(ws.uri.fsPath,".intent-tracer","events.jsonl");
-  }
-
-  private async removeTracerDir(): Promise<void>{
-    const file=this.getEventsFilePath();
-    if(!file)return;
-    const dir=path.dirname(file);
-    await fs.promises.rm(dir,{recursive:true,force:true});
-  }
-
-  async stickAllLink():Promise<void>{
-    if(this.lastRecords.size===0)return;
-    for(const key of this.lastRecords.keys()){
+  async stickAllLink(): Promise<void> {
+    if (this.lastRecords.size === 0) return;
+    for (const key of this.lastRecords.keys()) {
       await this.stickLink(key);
     }
-    return;
   }
 
-  async stickLink(uriKey: string): Promise<void>{
-    const record=this.lastRecords.get(uriKey);
-    if(!record)return;
+  async stickLink(uriKey: string): Promise<void> {
+    const record = this.lastRecords.get(uriKey);
+    if (!record) return;
 
-    const doc=vscode.workspace.textDocuments.find(
-      d=>d.uri.toString()===uriKey
-    );
-    if(!doc)return;
-    const key=uriKey;
+    const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uriKey);
+    if (!doc) return;
 
-    // TRUNCATED だとhunkが取れない
-    if(record.diff_unified.includes("...TRUNCATED...")){
+    if (!this.shouldStickLinkDocument(doc)) {
+      this.lastRecords.delete(uriKey);
+      return;
+    }
+
+    if (record.diff_unified.includes("...TRUNCATED...")) {
       vscode.window.showWarningMessage("diff_unified is truncated: some hunks may be missing");
     }
 
-    const targets:HunkTarget[]=parseHunkTargetsFromUnifiedDiff(record.diff_unified);
-    if(targets.length===0)return;
+    const targets: HunkTarget[] = parseHunkTargetsFromUnifiedDiff(record.diff_unified);
+    if (targets.length === 0) return;
 
-    targets.sort((a,b)=>b.line0-a.line0);
-    try{
-      this.suppress.add(key);
+    targets.sort((a, b) => b.line0 - a.line0);
 
-      const edit= new vscode.WorkspaceEdit();
+    try {
+      this.suppress.add(uriKey);
 
-      for(const t of targets){
-        const line0=Math.max(0,Math.min(t.line0, doc.lineCount));
-
-        const hash:string="x0123456789";
-        const insertText=`// @trace-pilot ${hash}\n`;
-        edit.insert(doc.uri,new vscode.Position(line0,0),insertText);
+      const edit = new vscode.WorkspaceEdit();
+      for (const t of targets) {
+        const line0 = Math.max(0, Math.min(t.line0, doc.lineCount));
+        const hash = "x0123456789";
+        edit.insert(doc.uri, new vscode.Position(line0, 0), `// @trace-pilot ${hash}\n`);
       }
 
-      this.lastRecords.delete(key); // @trace-pilotが2重に書けないようにする
+      this.lastRecords.delete(uriKey);
       await vscode.workspace.applyEdit(edit);
-    }finally{
-      setTimeout(()=>this.suppress.delete(key),0);
+    } finally {
+      setTimeout(() => this.suppress.delete(uriKey), 0);
     }
-
   }
 
-} // @trace-piが2重に書けないようにする
+  private async appendJsonl(obj: unknown) {
+    const file = this.getEventsFilePath();
+    if (!file) return;
 
-// diff_unifiedから変更された最上行を計算
-function parseHunkTargetsFromUnifiedDiff(diff:string):HunkTarget[]{
-  const lines=diff.split("\n");
-  const targets: HunkTarget[]=[];
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await fs.promises.appendFile(file, JSON.stringify(obj) + "\n", { encoding: "utf8" });
+  }
 
-  let i=0;
+  private getEventsFilePath(): string | null {
+    const ws = vscode.workspace.workspaceFolders?.[0];
+    if (!ws) return null;
+    return path.join(ws.uri.fsPath, ".intent-tracer", "events.jsonl");
+  }
 
-  // 先頭で無視する行
-  const isIgnorableChangedLine=(diffLine: string)=>{
-    const body=diffLine.slice(1);
-    const trimmed=body.trim();
+  private async removeTracerDir(): Promise<void> {
+    const file = this.getEventsFilePath();
+    if (!file) return;
+    const dir = path.dirname(file);
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+}
 
-    if(trimmed==="")return true;
+function parseHunkTargetsFromUnifiedDiff(diff: string): HunkTarget[] {
+  const lines = diff.split("\n");
+  const targets: HunkTarget[] = [];
+  let i = 0;
 
-    if(trimmed.startsWith("// @trace-pilot")) return true;
-
-      return false;
+  const isIgnorableChangedLine = (diffLine: string) => {
+    const body = diffLine.slice(1);
+    const trimmed = body.trim();
+    if (trimmed === "") return true;
+    if (trimmed.startsWith("// @trace-pilot")) return true;
+    return false;
   };
 
-  while(i<lines.length){
-    const header=lines[i];
-    if(!header.startsWith("@@")){
+  while (i < lines.length) {
+    const header = lines[i];
+    if (!header.startsWith("@@")) {
       i++;
       continue;
     }
 
     const m = header.match(/@@\s*-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s*@@/);
-    if(!m){
+    if (!m) {
       i++;
       continue;
     }
 
-    // 編集後の位置
-    let afterLine0=parseInt(m[1],10)-1;
-
-    // +/-の行にいるか
-    let inChangeBlock=false;
-
-    // 編集ブロックの中にいるか
-    let emittedForThisBlock=false;
+    let afterLine0 = parseInt(m[1], 10) - 1;
+    let inChangeBlock = false;
+    let emittedForThisBlock = false;
 
     i++;
-    while(i<lines.length&&!lines[i].startsWith("@@")){
-      const l=lines[i];
+    while (i < lines.length && !lines[i].startsWith("@@")) {
+      const l = lines[i];
 
-      // ファイルヘッダをskip
-      if(l.startsWith("+++ ")||l.startsWith("--- ")){
+      if (l.startsWith("+++ ") || l.startsWith("--- ")) {
         i++;
         continue;
       }
 
-      const isPlus=l.startsWith("+");
-      const isMinus=l.startsWith("-");
-      const isContext=l.startsWith(" ");
+      const isPlus = l.startsWith("+");
+      const isMinus = l.startsWith("-");
+      const isContext = l.startsWith(" ");
 
-      if(isPlus){
-        if(!inChangeBlock){
-          inChangeBlock=true;
-          emittedForThisBlock=false;
+      if (isPlus) {
+        if (!inChangeBlock) {
+          inChangeBlock = true;
+          emittedForThisBlock = false;
         }
-
-        if(!emittedForThisBlock&&!isIgnorableChangedLine(l)){
-          targets.push({line0: afterLine0});
-          emittedForThisBlock=true;
+        if (!emittedForThisBlock && !isIgnorableChangedLine(l)) {
+          targets.push({ line0: afterLine0 });
+          emittedForThisBlock = true;
         }
       }
-      
-      if(isPlus){
+
+      if (isPlus) {
         afterLine0++;
-      }else if(isMinus){
-        
-      }else{
-        inChangeBlock=false;
-        emittedForThisBlock=false;
+      } else if (isMinus) {
+        // afterLine0 unchanged
+      } else if (isContext) {
+        inChangeBlock = false;
+        emittedForThisBlock = false;
         afterLine0++;
+      } else {
+        inChangeBlock = false;
+        emittedForThisBlock = false;
       }
+
       i++;
     }
   }
 
-  const uniq=new Map<number,HunkTarget>();
-  for(const t of targets) if(!uniq.has(t.line0)) uniq.set(t.line0,t);
+  const uniq = new Map<number, HunkTarget>();
+  for (const t of targets) if (!uniq.has(t.line0)) uniq.set(t.line0, t);
   return [...uniq.values()];
 }
 
+function estimateStats(changes: ChangeRecord[]) {
+  let insertedChars = 0;
+  let deletedChars = 0;
+  let insertedLinesApprox = 0;
+  let deletedLinesApprox = 0;
 
-function estimateStats(changes: ChangeRecord[]){
-  let insertedChars=0;
-  let deletedChars=0;
-  let insertedLinesApprox=0;
-  let deletedLinesApprox=0;
-
-  for(const c of changes){
-    insertedChars+=c.text.length;
-    deletedChars+=c.rangeLength;
-
-    insertedLinesApprox+=countNewlines(c.text);
-    const deletedLineDelta=Math.max(0,c.range.end.line-c.range.start.line);
-    deletedLinesApprox+=deletedLineDelta;
+  for (const c of changes) {
+    insertedChars += c.text.length;
+    deletedChars += c.rangeLength;
+    insertedLinesApprox += countNewlines(c.text);
+    deletedLinesApprox += Math.max(0, c.range.end.line - c.range.start.line);
   }
 
-  return {
-    changeCount: changes.length,
-    insertedChars,
-    deletedChars,
-    insertedLinesApprox,
-    deletedLinesApprox,
-  };
+  return { changeCount: changes.length, insertedChars, deletedChars, insertedLinesApprox, deletedLinesApprox };
 }
 
-function countNewlines(s: string){
-  let n=0;
-  for(let i=0;i<s.length;i++){
-    if(s.charCodeAt(i)===10)n++;
-  }
+function countNewlines(s: string) {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
   return n;
+}
+
+function hasNullByte(s: string): boolean {
+  return s.includes("\u0000");
+}
+
+function inferLanguageId(uri: vscode.Uri): string {
+  const ext = path.extname(uri.fsPath).slice(1).toLowerCase();
+  return ext ? ext : "plaintext";
 }

@@ -70,9 +70,15 @@ export class TraceEngine{
         const createDisposable=workspace.onDidCreateFiles((event)=>{
             void this.diffTracer.onCreate(event);
         });
-        const externalCreateWatcher=workspace.createFileSystemWatcher("**/*",false,true,true);
+        const externalCreateWatcher=workspace.createFileSystemWatcher("**/*",false,false,false);
         externalCreateWatcher.onDidCreate((uri)=>{
             void this.diffTracer.onFsCreate(uri);
+        });
+        externalCreateWatcher.onDidChange((uri)=>{
+            this.diffTracer.onFsChange(uri);
+        });
+        externalCreateWatcher.onDidDelete((uri)=>{
+            this.diffTracer.onFsDelete(uri);
         });
         const changeDisposable=workspace.onDidChangeTextDocument((event)=>{
             this.diffTracer.onChange(event);
