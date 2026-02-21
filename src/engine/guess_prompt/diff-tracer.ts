@@ -68,8 +68,9 @@ interface HunkTarget {
   line0: number;
 }
 
-interface LinkableRecord {
+export interface LinkableRecord {
   uri: string;
+  ts: number;
   diff_unified: string;
 }
 
@@ -379,7 +380,7 @@ export class DiffTracer {
     };
 
     await this.appendJsonl(record);
-    this.addToBurst(key,{uri: record.uri,diff_unified: record.diff_unified});
+    this.addToBurst(key,{uri: record.uri,ts: Date.now(),diff_unified: record.diff_unified});
     this.externalSnapshots.set(key, { text: after, ts: Date.now() });
   }
 
@@ -422,7 +423,7 @@ export class DiffTracer {
       };
       await this.appendJsonl(record);
       if (diffUnified) {
-        this.addToBurst(key,{uri:record.uri,diff_unified: diffUnified});
+        this.addToBurst(key,{uri:record.uri,ts: Date.now(),diff_unified: diffUnified});
       }
     }
   }
@@ -491,7 +492,7 @@ export class DiffTracer {
     };
 
     await this.appendJsonl(record);
-    this.addToBurst(key,{uri: record.uri,diff_unified: record.diff_unified});
+    this.addToBurst(key,{uri: record.uri,ts: Date.now(),diff_unified: record.diff_unified});
 
     this.snapshots.set(key, { text: after, version: doc.version, ts: Date.now() });
     this.pending.delete(key);
