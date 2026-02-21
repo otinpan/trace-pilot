@@ -73,11 +73,19 @@ interface LinkableRecord {
   diff_unified: string;
 }
 
+interface BurstState{
+  id: number;
+  ts_start: number;
+  ts_last: number;
+  timer?: NodeJS.Timeout;
+  records: Map<UriKey,LinkableRecord>;
+}
+
 const BURST_IDLE_MS = 2000;
 const EXTERNAL_BURST_IDLE_MS = 500;
 const MAX_DIFF_CHARS = 200_000;
 const CREATED_DEDUPE_WINDOW_MS = 1000;
-
+const BUTST_GROUP_IDLE_MS=2500;
 const IGNORE_PATH_PARTS = [
   "/.git/",
   "/node_modules/",
@@ -102,16 +110,23 @@ const STICK_LANGUAGE_ALLOWLIST = new Set([
   "java",
   "python",
   "lua",
+  "perl",
+  "ruby",
 ]);
 
 export class DiffTracer {
   private snapshots = new Map<UriKey, Snapshot>();
   private pending = new Map<UriKey, PendingBatch>();
   private suppress = new Set<UriKey>();
-  private lastRecords = new Map<UriKey, LinkableRecord>();
-  private recentCreatedAt = new Map<UriKey, number>();
+  private recentCreatedAt = new Map<UriKey, number>(); 
 
-  private externalSnapshots = new Map<UriKey, ExternalSnapshot>();
+  // burst管理
+  private burstId: number=0;
+  private currentBurst: BurstState |null=null;
+  private latestCloseBurst: BurstState | null=null;
+
+  // 外部空の変更
+  private externalSnapshots = new Map<UriKey, ExternalSnapshot>(); 
   private externalPending = new Map<UriKey, ExternalPending>();
 
   constructor(private readonly ctx: vscode.ExtensionContext) {}
@@ -156,6 +171,44 @@ export class DiffTracer {
     }
   }
 
+  // Burst ////////////////////////////////////////////////////////////////////////////////////////////
+  private touchBurst(now=Date.now()):void{
+    // burstがないなら作成
+    if(!this.currentBurst){
+      this.currentBurst={
+        id: ++this.burstId,
+        ts_start:now,
+        ts_last: now,
+        records: new Map(),
+      }
+    }else{
+      this.currentBurst.ts_last=now;
+    }
+
+    if(this.currentBurst.timer)clearTimeout(this.currentBurst.timer);
+    this.currentBurst.timer=setTimeout(()=>{
+      this.closeCurrentBurst();
+    },BURST_IDLE_MS);
+  }
+
+  private closeCurrentBurst():void{
+    const b=this.currentBurst;
+    if(!b)return;
+
+    if(b.timer)clearTimeout(b.timer);
+    b.timer=undefined;
+
+    this.latestCloseBurst=b;
+    this.currentBurst=null;
+  }
+
+  private addToBurst(uriKey: UriKey,rec:LinkableRecord){
+    this.touchBurst();
+    if(!this.currentBurst)return;
+
+    this.currentBurst.records.set(uriKey,rec);
+  }
+
   onClose(doc: vscode.TextDocument) {
     if (!this.shouldTrackDocument(doc)) return;
     const key = doc.uri.toString();
@@ -172,6 +225,7 @@ export class DiffTracer {
     this.snapshots.delete(key);
   }
 
+  // EditFile ////////////////////////////////////////////////////////////////////////////////////////////////////
   async onCreate(e: vscode.FileCreateEvent): Promise<void> {
     await this.recordCreatedUris(e.files);
   }
@@ -200,6 +254,42 @@ export class DiffTracer {
 
     this.externalSnapshots.set(key, { text, ts: Date.now() });
   }
+
+  onChange(e: vscode.TextDocumentChangeEvent) {
+    const doc = e.document;
+    if (!this.shouldTrackDocument(doc)) return;
+
+    const key = doc.uri.toString();
+    if (this.suppress.has(key)) return;
+
+    this.ensureSnapshot(doc);
+
+    const changeRecords: ChangeRecord[] = e.contentChanges.map((c) => ({
+      range: {
+        start: { line: c.range.start.line, character: c.range.start.character },
+        end: { line: c.range.end.line, character: c.range.end.character },
+      },
+      rangeOffset: c.rangeOffset,
+      rangeLength: c.rangeLength,
+      text: c.text,
+    }));
+
+    const now = Date.now();
+    let batch = this.pending.get(key);
+    if (!batch) {
+      batch = { changes: [], ts_start: now, ts_last: now };
+      this.pending.set(key, batch);
+    }
+    batch.changes.push(...changeRecords);
+    batch.ts_last = now;
+
+    if (batch.timer) clearTimeout(batch.timer);
+    batch.timer = setTimeout(() => {
+      const liveDoc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+      if (liveDoc) void this.flush(liveDoc, "idle");
+    }, BURST_IDLE_MS);
+  }
+
 
   onFsChange(uri: vscode.Uri): void {
     if (!this.shouldTrackUri(uri)) return;
@@ -232,6 +322,7 @@ export class DiffTracer {
     this.externalSnapshots.delete(key);
   }
 
+  // jsonlに保存して、lastRecordsにキャッシュする
   private async flushExternal(uri: vscode.Uri, key: UriKey): Promise<void> {
     const batch = this.externalPending.get(key);
     if (!batch) return;
@@ -287,7 +378,7 @@ export class DiffTracer {
     };
 
     await this.appendJsonl(record);
-    this.lastRecords.set(key, { uri: record.uri, diff_unified: record.diff_unified });
+    this.addToBurst(key,{uri: record.uri,diff_unified: record.diff_unified});
     this.externalSnapshots.set(key, { text: after, ts: Date.now() });
   }
 
@@ -297,6 +388,7 @@ export class DiffTracer {
       if (!this.shouldTrackUri(uri)) continue;
       const key = uri.toString();
       const lastTs = this.recentCreatedAt.get(key);
+      // 同じファイル作成イベントが短時間に2回飛んでくるのを防止
       if (lastTs && now - lastTs < CREATED_DEDUPE_WINDOW_MS) continue;
 
       this.recentCreatedAt.set(key, now);
@@ -329,45 +421,11 @@ export class DiffTracer {
       };
       await this.appendJsonl(record);
       if (diffUnified) {
-        this.lastRecords.set(key, { uri: uri.fsPath, diff_unified: diffUnified });
+        this.addToBurst(key,{uri:record.uri,diff_unified: diffUnified});
       }
     }
   }
 
-  onChange(e: vscode.TextDocumentChangeEvent) {
-    const doc = e.document;
-    if (!this.shouldTrackDocument(doc)) return;
-
-    const key = doc.uri.toString();
-    if (this.suppress.has(key)) return;
-
-    this.ensureSnapshot(doc);
-
-    const changeRecords: ChangeRecord[] = e.contentChanges.map((c) => ({
-      range: {
-        start: { line: c.range.start.line, character: c.range.start.character },
-        end: { line: c.range.end.line, character: c.range.end.character },
-      },
-      rangeOffset: c.rangeOffset,
-      rangeLength: c.rangeLength,
-      text: c.text,
-    }));
-
-    const now = Date.now();
-    let batch = this.pending.get(key);
-    if (!batch) {
-      batch = { changes: [], ts_start: now, ts_last: now };
-      this.pending.set(key, batch);
-    }
-    batch.changes.push(...changeRecords);
-    batch.ts_last = now;
-
-    if (batch.timer) clearTimeout(batch.timer);
-    batch.timer = setTimeout(() => {
-      const liveDoc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
-      if (liveDoc) void this.flush(liveDoc, "idle");
-    }, BURST_IDLE_MS);
-  }
 
   async flushAll(reason: "manual" | "shutdown", notify = true) {
     for (const doc of vscode.workspace.textDocuments) {
@@ -385,6 +443,7 @@ export class DiffTracer {
 
   async shutdownAndClear(): Promise<void> {
     await this.flushAll("shutdown", false);
+    this.closeCurrentBurst();
     await this.removeTracerDir();
   }
 
@@ -431,28 +490,41 @@ export class DiffTracer {
     };
 
     await this.appendJsonl(record);
-    this.lastRecords.set(key, { uri: record.uri, diff_unified: record.diff_unified });
+    this.addToBurst(key,{uri: record.uri,diff_unified: record.diff_unified});
 
     this.snapshots.set(key, { text: after, version: doc.version, ts: Date.now() });
     this.pending.delete(key);
   }
 
+  // stick ////////////////////////////////////////////////////////////////////////////////////////////////////
   async stickAllLink(): Promise<void> {
-    if (this.lastRecords.size === 0) return;
-    for (const key of this.lastRecords.keys()) {
+    // もしburstが動いているなら、一旦閉じる
+    if(this.currentBurst)this.closeCurrentBurst();
+
+    console.log("latestCloseBurst: ",this.latestCloseBurst);
+    const b=this.latestCloseBurst;
+    if(!b||b.records.size===0)return;
+
+    for (const key of b.records.keys()) {
       await this.stickLink(key);
     }
+
+    this.latestCloseBurst=null;
   }
 
   async stickLink(uriKey: string): Promise<void> {
-    const record = this.lastRecords.get(uriKey);
+    const b=this.latestCloseBurst;
+    if(!b||b.records.size===0)return;
+    if(!b.records.has(uriKey))return;
+
+    const record=b.records.get(uriKey);
     if (!record) return;
 
     const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uriKey);
     if (!doc) return;
 
     if (!this.shouldStickLinkDocument(doc)) {
-      this.lastRecords.delete(uriKey);
+      b.records.delete(uriKey);
       return;
     }
 
@@ -471,11 +543,11 @@ export class DiffTracer {
       const edit = new vscode.WorkspaceEdit();
       for (const t of targets) {
         const line0 = Math.max(0, Math.min(t.line0, doc.lineCount));
-        const hash = "x0123456789";
+        const hash = Date.now().toString();
         edit.insert(doc.uri, new vscode.Position(line0, 0), `// @trace-pilot ${hash}\n`);
       }
 
-      this.lastRecords.delete(uriKey);
+      b.records.delete(uriKey);
       await vscode.workspace.applyEdit(edit);
     } finally {
       setTimeout(() => this.suppress.delete(uriKey), 0);

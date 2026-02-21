@@ -39,7 +39,7 @@ import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-an
 import { setEngine } from 'crypto';
 import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf, showFullMdAndHighlightMd } from './show-information';
 import { PromptCards } from './prompt-cards';
-import { DiffTracer } from './diff-tracer'; 
+import { DiffTracer } from './guess_prompt/diff-tracer'; 
 
 export class TraceEngine{
     public highlightDeco?: TextEditorDecorationType;
