@@ -20,7 +20,7 @@ interface ChangeRecord {
   rangeLength: number;
   text: string;
 }
-
+// jsonl記録される
 interface EditBurstRecord {
   type: "edit_burst";
   uri: string;
@@ -85,7 +85,7 @@ const BURST_IDLE_MS = 2000;
 const EXTERNAL_BURST_IDLE_MS = 500;
 const MAX_DIFF_CHARS = 200_000;
 const CREATED_DEDUPE_WINDOW_MS = 1000;
-const BUTST_GROUP_IDLE_MS=2500;
+const BURST_GROUP_IDLE_MS=5000; // busrtをcloseするまでの時間
 const IGNORE_PATH_PARTS = [
   "/.git/",
   "/node_modules/",
@@ -188,7 +188,7 @@ export class DiffTracer {
     if(this.currentBurst.timer)clearTimeout(this.currentBurst.timer);
     this.currentBurst.timer=setTimeout(()=>{
       this.closeCurrentBurst();
-    },BURST_IDLE_MS);
+    },BURST_GROUP_IDLE_MS);
   }
 
   private closeCurrentBurst():void{
@@ -198,6 +198,7 @@ export class DiffTracer {
     if(b.timer)clearTimeout(b.timer);
     b.timer=undefined;
 
+    console.log("close: ",b);
     this.latestCloseBurst=b;
     this.currentBurst=null;
   }
@@ -501,7 +502,7 @@ export class DiffTracer {
     // もしburstが動いているなら、一旦閉じる
     if(this.currentBurst)this.closeCurrentBurst();
 
-    console.log("latestCloseBurst: ",this.latestCloseBurst);
+    //console.log("latestCloseBurst: ",this.latestCloseBurst);
     const b=this.latestCloseBurst;
     if(!b||b.records.size===0)return;
 
