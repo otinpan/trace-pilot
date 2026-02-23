@@ -1,8 +1,8 @@
-import * as vscode from "vscode";
+import * as vscode from "vscode"
 import * as fs from "fs";
 import * as path from "path";
 import { createTwoFilesPatch } from "diff";
-
+import { createPromptCard } from "./create-card";
 type UriKey = string;
 
 interface Snapshot {
@@ -86,7 +86,7 @@ const BURST_IDLE_MS = 2000;
 const EXTERNAL_BURST_IDLE_MS = 500;
 const MAX_DIFF_CHARS = 200_000;
 const CREATED_DEDUPE_WINDOW_MS = 1000;
-const BURST_GROUP_IDLE_MS=5000; // busrtをcloseするまでの時間
+const BURST_GROUP_IDLE_MS=8000; // busrtをcloseするまでの時間
 const IGNORE_PATH_PARTS = [
   "/.git/",
   "/node_modules/",
@@ -507,14 +507,16 @@ export class DiffTracer {
     const b=this.latestCloseBurst;
     if(!b||b.records.size===0)return;
 
+    const metaHash=await createPromptCard(b.records);
+
     for (const key of b.records.keys()) {
-      await this.stickLink(key);
+      await this.stickLink(key,metaHash);
     }
 
     this.latestCloseBurst=null;
   }
 
-  async stickLink(uriKey: string): Promise<void> {
+  async stickLink(uriKey: string,metaHash:string): Promise<void> {
     const b=this.latestCloseBurst;
     if(!b||b.records.size===0)return;
     if(!b.records.has(uriKey))return;
@@ -522,8 +524,14 @@ export class DiffTracer {
     const record=b.records.get(uriKey);
     if (!record) return;
 
-    const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uriKey);
-    if (!doc) return;
+    const uri=vscode.Uri.parse(uriKey);
+    let doc: vscode.TextDocument;
+    try{
+      doc=await vscode.workspace.openTextDocument(uri);
+    }catch(e){
+      console.log("failed to open text document: ",uri);
+      return;
+    }
 
     if (!this.shouldStickLinkDocument(doc)) {
       b.records.delete(uriKey);
@@ -545,8 +553,7 @@ export class DiffTracer {
       const edit = new vscode.WorkspaceEdit();
       for (const t of targets) {
         const line0 = Math.max(0, Math.min(t.line0, doc.lineCount));
-        const hash = Date.now().toString();
-        edit.insert(doc.uri, new vscode.Position(line0, 0), `// @trace-pilot ${hash}\n`);
+        edit.insert(doc.uri, new vscode.Position(line0, 0), `// @trace-pilot ${metaHash}\n`);
       }
 
       b.records.delete(uriKey);
