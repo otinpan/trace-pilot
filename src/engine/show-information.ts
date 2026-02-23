@@ -236,14 +236,12 @@ function toFencedMarkdownFromBotResponse(
     botResponse: string,
     codeBlocks: { code: string; language: string }[],
 ): string {
-
     const normalize = (s: string) =>
         (s ?? "")
             .replace(/[a-zA-Z0-9_+-]*Copy code/gi, "")
             .replace(/\bCopy code\b/gi, "")
             .replace(/\r\n/g, "\n");
 
-    // 先頭のラベル行を落とす
     const stripLangHeader = (code: string, lang: string) => {
         const firstLine = code.split("\n", 1)[0] ?? "";
         const fl = firstLine.trim().toLowerCase();
@@ -252,7 +250,24 @@ function toFencedMarkdownFromBotResponse(
 
         const isLangLine =
             (langNorm && fl === langNorm) ||
-            ["rust", "Rust","bash", "sh", "shell", "makefile", "python","perl", "cpp", "c++", "js", "javascript", "ts", "typescript", "json", "yaml", "toml"].includes(fl);
+            [
+                "rust",
+                "bash",
+                "sh",
+                "shell",
+                "makefile",
+                "python",
+                "perl",
+                "cpp",
+                "c++",
+                "js",
+                "javascript",
+                "ts",
+                "typescript",
+                "json",
+                "yaml",
+                "toml",
+            ].includes(fl);
 
         if (!isLangLine) return code;
 
@@ -260,67 +275,61 @@ function toFencedMarkdownFromBotResponse(
         return rest.replace(/^\n+/, "");
     };
 
-    const isLineBoundary = (ch: string|undefined) =>
-        ch===undefined || ch==="\n";
+    const inferLang = (mdItLike: string | undefined): string => {
+        const s = (mdItLike ?? "").trim();
+        const m = s.match(/!\s*([a-zA-Z0-9_+-]+)/);
+        if (m?.[1]) return m[1].toLowerCase();
+        return "text";
+    };
 
-    const getFenceRanges = (text: string): Array<{start: number; end: number}> => {
-        const ranges: Array<{start: number; end: number}> = [];
-        let i=0;
-        while(i<text.length){
-            const openIdx=text.indexOf("```", i);
-            if(openIdx<0){
-                break;
-            }
-            const closeIdx=text.indexOf("```", openIdx+3);
-            if(closeIdx<0){
-                break;
-            }
-            ranges.push({start: openIdx, end: closeIdx+3});
-            i=closeIdx+3;
+    const isLineBoundary = (ch: string | undefined) => ch === undefined || ch === "\n";
+
+    const getFenceRanges = (text: string): Array<{ start: number; end: number }> => {
+        const ranges: Array<{ start: number; end: number }> = [];
+        let i = 0;
+        while (i < text.length) {
+            const openIdx = text.indexOf("```", i);
+            if (openIdx < 0) break;
+            const closeIdx = text.indexOf("```", openIdx + 3);
+            if (closeIdx < 0) break;
+            ranges.push({ start: openIdx, end: closeIdx + 3 });
+            i = closeIdx + 3;
         }
         return ranges;
     };
 
-    const overlapsFence = (
-        start: number,
-        end: number,
-        ranges: Array<{start:number; end:number}>
-    ) => {
-        for(const r of ranges){
-            if(start<r.end && end>r.start){
-                return true;
-            }
+    const overlapsFence = (start: number, end: number, ranges: Array<{ start: number; end: number }>) => {
+        for (const r of ranges) {
+            if (start < r.end && end > r.start) return true;
         }
         return false;
     };
 
     const findBestCodeMatch = (text: string, code: string): number => {
-        const fenceRanges=getFenceRanges(text);
-        let from=0;
-        while(from<text.length){
-            const idx=text.indexOf(code, from);
-            if(idx<0){
-                return -1;
-            }
-            const end=idx+code.length;
-            const prev=text[idx-1];
-            const next=text[end];
+        const fenceRanges = getFenceRanges(text);
+        let from = 0;
+        while (from < text.length) {
+            const idx = text.indexOf(code, from);
+            if (idx < 0) return -1;
 
-            const boundaryOk=isLineBoundary(prev)&&isLineBoundary(next);
-            const notInsideFence=!overlapsFence(idx,end,fenceRanges);
-            if(boundaryOk&&notInsideFence){
-                return idx;
-            }
-            from=idx+1;
+            const end = idx + code.length;
+            const prev = text[idx - 1];
+            const next = text[end];
+
+            const boundaryOk = isLineBoundary(prev) && isLineBoundary(next);
+            const notInsideFence = !overlapsFence(idx, end, fenceRanges);
+
+            if (boundaryOk && notInsideFence) return idx;
+            from = idx + 1;
         }
         return -1;
     };
 
     let out = normalize(botResponse ?? "");
 
-    const blocks = [...codeBlocks].sort(
-        (a, b) => (b.code?.length ?? 0) - (a.code?.length ?? 0),
-    );
+    // 長いコードから先に置換する
+    const blocks = [...codeBlocks].sort((a, b) => (b.code?.length ?? 0) - (a.code?.length ?? 0));
+    const appended: Array<{ lang: string; code: string }> = [];
 
     for (const b of blocks) {
         const raw = b.code ?? "";
@@ -339,6 +348,16 @@ function toFencedMarkdownFromBotResponse(
         if (idx >= 0) {
             const fenced = `\n\n\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
             out = out.slice(0, idx) + fenced + out.slice(idx + code.length);
+        } else {
+            appended.push({ lang, code });
+        }
+    }
+
+    if (appended.length > 0) {
+        out = out.replace(/\n{3,}/g, "\n\n").trimEnd();
+        out += `\n\n---\n\nRecovered code blocks:\n`;
+        for (const a of appended) {
+            out += `\n\n\`\`\`${a.lang}\n${a.code}\n\`\`\`\n`;
         }
     }
 
@@ -374,8 +393,8 @@ export async function showFullMdAndHighlightMd(
     const generatedMd=toFencedMarkdownFromBotResponse(
         generatedText,
         codeBlocks.map(cb=>({
-            code:cb.code ?? "",
-            language: cb.language ?? "text",
+            code:cb.code ?? "", //codeがundefinedなら""
+            language: cb.language ?? "text", //languageがundefinedならtext
         })),
     );
     panel.webview.html=webviewContentMarkdown(
