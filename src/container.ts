@@ -155,7 +155,8 @@ export class Container{
                     md.appendMarkdown(`- hash: \`${metaHash}\`\n`);
                     md.appendMarkdown(`\n[Open source](${cmdUri})\n`);
                     const type:WEB_INFO_SOURCE=await this.engine.getMetadataType(metaHash);
-                    if(type===WEB_INFO_SOURCE.CHAT_GPT){
+                    if(type===WEB_INFO_SOURCE.CHAT_GPT||
+                       type===WEB_INFO_SOURCE.CODING_AGENT){
                       const promptCmdUri=`command:trace-pilot.openPromptCards?${args}`;
                       md.appendMarkdown(`\n[Open PromptCards](${promptCmdUri})\n`);
                     }
@@ -202,7 +203,8 @@ export class Container{
                     };
 
                     const type:WEB_INFO_SOURCE=await this.engine.getMetadataType(metaHash);
-                    if(type===WEB_INFO_SOURCE.CHAT_GPT){
+                    if(type===WEB_INFO_SOURCE.CHAT_GPT||
+                      type===WEB_INFO_SOURCE.CODING_AGENT){
                       const cmdPrompt:Command={
                         title: `Trace-Pilot: Open PromptCards`,
                         command: "trace-pilot.openPromptCards",

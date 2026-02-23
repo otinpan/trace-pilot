@@ -86,7 +86,7 @@ const BURST_IDLE_MS = 2000;
 const EXTERNAL_BURST_IDLE_MS = 500;
 const MAX_DIFF_CHARS = 200_000;
 const CREATED_DEDUPE_WINDOW_MS = 1000;
-const BURST_GROUP_IDLE_MS=8000; // busrtをcloseするまでの時間
+const BURST_GROUP_IDLE_MS=6000; // busrtをcloseするまでの時間
 const IGNORE_PATH_PARTS = [
   "/.git/",
   "/node_modules/",

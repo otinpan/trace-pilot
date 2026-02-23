@@ -27,6 +27,8 @@ import {
     GPTMetadata,
     ChromePDFMetadata,
     ChromePDFHash,
+    CodingAgentHash,
+    CodingAgentMetadata,
 } from '../constants/types';
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
@@ -225,7 +227,7 @@ export class TraceEngine{
         try{
             const metaJSON=await this.restoreTextByHash(metaHash);
 
-            window.showInformationMessage(metaJSON);
+            //window.showInformationMessage(metaJSON);
 
             const metaData=JSON.parse(metaJSON) as Metadata;
             const ah=metaData.additionalHash;
@@ -327,6 +329,41 @@ export class TraceEngine{
                 );
                 return true;
             }
+            case WEB_INFO_SOURCE.CODING_AGENT:{
+                if(!ah||typeof ah!=="object"||!("promptHash" in ah)||!("generatedHash" in ah)){
+                    throw new Error("promptHash or gneneratedHash is not available for this metadata");
+                }
+                const promptHash=(ah as CodingAgentHash).promptHash;
+                const generatedHash=(ah as CodingAgentHash).generatedHash;
+                const codeBlockHashes=(ah as CodingAgentHash).codeBlockHashes;
+
+                const promptText=await this.restoreTextByHash(promptHash);
+                const generatedText=await this.restoreTextByHash(generatedHash);
+                const copiedText=await this.restoreTextByHash(metaData.originalHash);
+                const restoredBlocks: RestoredCodeBlock[]=await Promise.all(
+                    (codeBlockHashes ?? []).map(async (b)=>{
+                        const code=await this.restoreTextByHash(b.codeHash);
+                        return{
+                            index: b.index,
+                            code,
+                            language: b.language,
+                            parentId: b.parentId,
+                            turnParentId: b.turnParentId,
+                        };
+                    })
+                );
+                console.log(restoredBlocks);
+
+                await showFullMdAndHighlightMd(
+                    metaHash,
+                    copiedText,
+                    promptText,
+                    generatedText,
+                    restoredBlocks,
+                    this.context
+                );
+                return true;
+            }
             default:
                 throw new Error(`Unsupported meta type:" ${metaData.type}`);
             }  
@@ -347,7 +384,6 @@ export class TraceEngine{
       try{
         const metaJSON=await this.restoreTextByHash(metaHash);
 
-        window.showInformationMessage(metaJSON);
         const metaData=JSON.parse(metaJSON) as Metadata;
         return metaData.type;
       }catch{

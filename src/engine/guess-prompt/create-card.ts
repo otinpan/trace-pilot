@@ -9,7 +9,8 @@ import {
   Metadata,
   WEB_INFO_SOURCE,
   CodingAgentHash, 
-  CodingAgentMetadata
+  CodingAgentMetadata,
+  CodeBlockHash,
 } from "../../constants/types";
 
 if (typeof process.loadEnvFile === "function") {
@@ -179,8 +180,11 @@ export async function createPromptCard(
   ].join("\n")).join("\n\n");
   const generatedText=`${recordsCodeBlock}\n\n${out.guessed_generated}`;
   const generatedHash=await calculateHashAndStore(generatedText);
-  const codeBlockHashes=JSON.stringify(
-    Array.from(records.values()).map((record) => record.diff_unified)
+  const codeBlockHashes: CodeBlockHash[]=await Promise.all(
+    Array.from(records.values()).map(async (record, index) => ({
+      index,
+      codeHash: await calculateHashAndStore(record.diff_unified),
+    }))
   );
   const meta:Metadata={
     originalHash: originalHash,
@@ -188,14 +192,14 @@ export async function createPromptCard(
       promptHash,
       generatedHash,
       codeBlockHashes,
-    } as CodingAgentHash,
+    },
     url: uris,
     timeCopied: new Date(out.time).toISOString(),
     timeCopiedNumber: out.time,
     type: WEB_INFO_SOURCE.CODING_AGENT,
     additionalMetaData: {
       isText: true,
-    } as CodingAgentMetadata,
+    },
   };
   const metaJSON=JSON.stringify(meta);
   const metaHash=await calculateHashAndStore(metaJSON);

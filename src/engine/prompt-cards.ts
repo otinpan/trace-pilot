@@ -3,7 +3,7 @@ import{
 } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
-import { Metadata,WEB_INFO_SOURCE,GPTHash } from "../constants/types";
+import { Metadata,WEB_INFO_SOURCE,GPTHash, CodingAgentHash } from "../constants/types";
 import { getRepositoryPathOrNull } from "../repository/repository";
 import { ensureWorktree } from "../repository/worktree";
 import { PromptCardItem, showPromptCards } from './show-promptcards';
@@ -12,6 +12,37 @@ interface PromptMetadata{
   timeCopied: string;
   metaHashes: string[];
 };
+
+const ALLOWED_SOURCES=new Set<WEB_INFO_SOURCE>([
+  WEB_INFO_SOURCE.CHAT_GPT,
+  WEB_INFO_SOURCE.CODING_AGENT,
+]);
+
+function isAllowedSource(t:WEB_INFO_SOURCE):boolean{
+  return ALLOWED_SOURCES.has(t);
+}
+
+function getPromptAndGeneratedHash(meta: Metadata): {promptHash: string; generatedHash: string} {
+  const ah=meta.additionalHash;
+  if(!ah||typeof ah!=="object"||!("promptHash" in ah)||!("generatedHash" in ah)){
+    throw new Error("promptHash or generatedHash is not available for this metadata");
+  }
+
+  switch(meta.type){
+  case WEB_INFO_SOURCE.CHAT_GPT:
+    return {
+      promptHash: (ah as GPTHash).promptHash,
+      generatedHash: (ah as GPTHash).generatedHash,
+    };
+  case WEB_INFO_SOURCE.CODING_AGENT:
+    return {
+      promptHash: (ah as CodingAgentHash).promptHash,
+      generatedHash: (ah as CodingAgentHash).generatedHash,
+    };
+  default:
+    throw new Error(`Unsupported metadata type for prompt cards: ${meta.type}`);
+  }
+}
 
 export class PromptCards{
   public times: number[]; //ソート用の配列
@@ -25,16 +56,10 @@ export class PromptCards{
   }
 
   add(meta: Metadata,hash:string): boolean{
-    if(meta.type!==WEB_INFO_SOURCE.CHAT_GPT){
+    if(!isAllowedSource(meta.type)){
       return false;
     }
-    const ah=meta.additionalHash;
-    if(!ah||typeof ah!=="object"||!("promptHash" in ah)||!("generatedHash" in ah)){
-      throw new Error("promptHash or generatedHash is not available for this metadata");
-    }
-    const promptHash=(ah as GPTHash).promptHash;
-    const generatedHash=(ah as GPTHash).generatedHash;
-    
+    const { promptHash, generatedHash }=getPromptAndGeneratedHash(meta);
     const pairHash=`${promptHash}:${generatedHash}`;
     // すでにこのpairが存在する場合
     const pm=this.hashToPromptMetadata.get(pairHash);
@@ -107,7 +132,7 @@ export class PromptCards{
     return true;
   }
 
-
+  // blobPathからmatadataとhash値をaddに渡す
   async addPromptCards(blobPath:string):Promise<boolean>{
     if(!blobPath.endsWith(".bin")){
       return false;
@@ -138,15 +163,10 @@ export class PromptCards{
     context: ExtensionContext,
     meta:Metadata
   ):Promise<boolean>{
-    if(meta.type!==WEB_INFO_SOURCE.CHAT_GPT){
+    if(!isAllowedSource(meta.type)){
       return false;
     }
-    const ah=meta.additionalHash;
-    if(!ah||typeof ah!=="object"||!("promptHash" in ah)||!("generatedHash" in ah)){
-      throw new Error("promptHash or generatedHash is not available for this metadata");
-    }
-    const promptHash=(ah as GPTHash).promptHash;
-    const generatedHash=(ah as GPTHash).generatedHash;
+    const { promptHash, generatedHash }=getPromptAndGeneratedHash(meta);
     const pairHash=`${promptHash}:${generatedHash}`;
     await showPromptCards(context,{
       selectedPairHash: pairHash,

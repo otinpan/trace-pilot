@@ -231,6 +231,7 @@ function inferLang(mdItLike: string|undefined):string{
     return "text";
 }
 
+// responseからcodeBlockを探して```を差し込む
 function toFencedMarkdownFromBotResponse(
     botResponse: string,
     codeBlocks: { code: string; language: string }[],
@@ -251,7 +252,7 @@ function toFencedMarkdownFromBotResponse(
 
         const isLangLine =
             (langNorm && fl === langNorm) ||
-            ["rust", "bash", "sh", "shell", "makefile", "python","perl", "cpp", "c++", "js", "javascript", "ts", "typescript", "json", "yaml", "toml"].includes(fl);
+            ["rust", "Rust","bash", "sh", "shell", "makefile", "python","perl", "cpp", "c++", "js", "javascript", "ts", "typescript", "json", "yaml", "toml"].includes(fl);
 
         if (!isLangLine) return code;
 
@@ -355,6 +356,7 @@ export async function showFullMdAndHighlightMd(
     context: ExtensionContext,
 )
 :Promise<void>{
+  console.log("code blocks: ",codeBlocks);
     const panel=window.createWebviewPanel(
         "trace-pilot.markdown",
         `Trace-Pilot Markdown: ${hash.slice(0,8)}`,

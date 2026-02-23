@@ -32,7 +32,7 @@ export interface VSCodeHash{
 export interface CodingAgentHash{
   promptHash: string,
   generatedHash: string,
-  codeBlockHashes: string,
+  codeBlockHashes: CodeBlockHash[],
 }
 
 export interface ChromePDFHash{
