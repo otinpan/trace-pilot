@@ -305,6 +305,8 @@ function toFencedMarkdownFromBotResponse(
         return false;
     };
 
+    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     const findBestCodeMatch = (text: string, code: string): number => {
         const fenceRanges = getFenceRanges(text);
         let from = 0;
@@ -323,6 +325,33 @@ function toFencedMarkdownFromBotResponse(
             from = idx + 1;
         }
         return -1;
+    };
+
+    const findCodeRangeIgnoringWhitespace = (
+        text: string,
+        code: string,
+    ): { start: number; end: number } | null => {
+        const tokens = code.split(/\s+/).filter(Boolean);
+        if (tokens.length === 0) return null;
+
+        const pattern = tokens.map(escapeRegExp).join("\\s*");
+        const re = new RegExp(pattern, "gm");
+        const fenceRanges = getFenceRanges(text);
+
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text)) !== null) {
+            const start = m.index;
+            const end = start + (m[0]?.length ?? 0);
+            if (end <= start) {
+                re.lastIndex = start + 1;
+                continue;
+            }
+            if (overlapsFence(start, end, fenceRanges)) {
+                continue;
+            }
+            return { start, end };
+        }
+        return null;
     };
 
     let out = normalize(botResponse ?? "");
@@ -349,7 +378,13 @@ function toFencedMarkdownFromBotResponse(
             const fenced = `\n\n\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
             out = out.slice(0, idx) + fenced + out.slice(idx + code.length);
         } else {
-            appended.push({ lang, code });
+            const loose = findCodeRangeIgnoringWhitespace(out, code);
+            if (loose) {
+                const fenced = `\n\n\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
+                out = out.slice(0, loose.start) + fenced + out.slice(loose.end);
+            } else {
+                appended.push({ lang, code });
+            }
         }
     }
 
