@@ -221,7 +221,221 @@ function webviewContentPDF(extensionPath: string, srcPdfPath: string, webview: W
     return html;
 }
 
+// mhtml //////////////////////////////////////////////////////////////////
+export async function showFullMhtmlAndHighlightMhtml(
+  hash: string,
+  mhtmlText: string,
+  copiedText: string,
+  context: ExtensionContext,
+):Promise<void>{
+  const panel=window.createWebviewPanel(
+    "trace-pilot.mhtml",
+    `Trace-Pilot MHTML: ${hash.slice(0,8)}`,
+    ViewColumn.Active,
+    { enableScripts: true }
+  );
 
+  panel.webview.options={
+    enableScripts: true,
+    localResourceRoots:[
+      Uri.joinPath(context.extensionUri,"media"),
+    ]
+  };
+
+  const extractedHtml = extractHtmlFromMhtml(mhtmlText);
+  panel.webview.html = webviewContentMhtml(
+    context.extensionUri.fsPath,
+    panel.webview,
+    extractedHtml,
+    hash,
+  );
+
+  const normNeedle = copiedText.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+  const disp = panel.webview.onDidReceiveMessage((msg)=>{
+    if(msg?.type==="ready"){
+      panel.webview.postMessage({ type: "find", needle: normNeedle });
+    }
+  });
+
+  context.subscriptions.push(disp);
+}
+
+function webviewContentMhtml(
+  extensionPath: string,
+  webview: Webview,
+  htmlText: string,
+  hash: string,
+): string {
+  const htmlPath = path.join(extensionPath, "media", "show_mhtml.html");
+  const jsPath = path.join(extensionPath, "media", "show_mhtml.js");
+  const nonce = getNonce();
+
+  const jsUri = webview.asWebviewUri(Uri.file(jsPath));
+
+  let html = fs.readFileSync(htmlPath, "utf8");
+  html = replaceAllToken(html, "cspSource", webview.cspSource);
+  html = replaceAllToken(html, "nonce", nonce);
+  html = replaceAllToken(html, "showMhtmlJsUri", jsUri.toString());
+  html = replaceAllToken(html, "hashShort", hash.slice(0, 8));
+  html = replaceAllToken(html, "mhtmlHtml", escapeForHtmlTemplate(htmlText));
+
+  const leftovers = html.match(/\{\{\s*\w+\s*\}\}/g);
+  if (leftovers) console.error("Unreplaced template tokens remain:", leftovers);
+
+  return html;
+}
+
+type MimePart = {
+  headers: Map<string, string>;
+  body: string;
+};
+
+function extractHtmlFromMhtml(mhtmlText: string): string {
+  if (!mhtmlText) return "";
+  const normalized = mhtmlText.replace(/\r\n/g, "\n");
+  const splitIdx = normalized.indexOf("\n\n");
+  if (splitIdx < 0) return normalized;
+
+  const rootHeaders = parseMimeHeaders(normalized.slice(0, splitIdx));
+  const rootBody = normalized.slice(splitIdx + 2);
+  const rootContentType = rootHeaders.get("content-type") ?? "";
+  const boundary = getMimeBoundary(rootContentType);
+
+  if (!boundary) {
+    if (/text\/html/i.test(rootContentType)) {
+      return decodeMimeBody(rootHeaders, rootBody).trim();
+    }
+    return wrapRawMhtmlAsHtml(normalized);
+  }
+
+  const parts = splitMimeParts(rootBody, boundary);
+  for (const part of parts) {
+    const contentType = part.headers.get("content-type") ?? "";
+    if (/text\/html/i.test(contentType)) {
+      return decodeMimeBody(part.headers, part.body).trim();
+    }
+  }
+
+  return wrapRawMhtmlAsHtml(normalized);
+}
+
+function parseMimeHeaders(headerText: string): Map<string, string> {
+  const headers = new Map<string, string>();
+  let currentKey = "";
+
+  for (const line of headerText.split("\n")) {
+    if (/^[ \t]/.test(line) && currentKey) {
+      headers.set(currentKey, `${headers.get(currentKey) ?? ""} ${line.trim()}`.trim());
+      continue;
+    }
+    const idx = line.indexOf(":");
+    if (idx <= 0) continue;
+    currentKey = line.slice(0, idx).trim().toLowerCase();
+    headers.set(currentKey, line.slice(idx + 1).trim());
+  }
+
+  return headers;
+}
+
+function getMimeBoundary(contentType: string): string | null {
+  const m = contentType.match(/boundary\s*=\s*(?:\"([^\"]+)\"|([^;]+))/i);
+  return (m?.[1] ?? m?.[2] ?? "").trim() || null;
+}
+
+function splitMimeParts(body: string, boundary: string): MimePart[] {
+  const marker = `--${boundary}`;
+  const rawSegments = body.split(marker);
+  const parts: MimePart[] = [];
+
+  for (const raw of rawSegments) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === "--") continue;
+    const segment = trimmed.endsWith("--") ? trimmed.slice(0, -2).trim() : trimmed;
+    const idx = segment.indexOf("\n\n");
+    if (idx < 0) continue;
+    parts.push({
+      headers: parseMimeHeaders(segment.slice(0, idx)),
+      body: segment.slice(idx + 2),
+    });
+  }
+
+  return parts;
+}
+
+function decodeMimeBody(headers: Map<string, string>, body: string): string {
+  const transferEncoding = (headers.get("content-transfer-encoding") ?? "").toLowerCase();
+  const contentType = headers.get("content-type") ?? "";
+  const charset = getMimeCharset(contentType);
+
+  let bytes: Uint8Array;
+  if (transferEncoding.includes("base64")) {
+    bytes = Buffer.from(body.replace(/\s+/g, ""), "base64");
+  } else if (transferEncoding.includes("quoted-printable")) {
+    bytes = decodeQuotedPrintableToBytes(body);
+  } else {
+    bytes = Buffer.from(body, "utf8");
+  }
+
+  return decodeBytesWithCharset(bytes, charset);
+}
+
+function getMimeCharset(contentType: string): string {
+  const m = contentType.match(/charset\s*=\s*(?:\"([^\"]+)\"|([^;]+))/i);
+  return (m?.[1] ?? m?.[2] ?? "utf-8").trim().toLowerCase();
+}
+
+function decodeQuotedPrintableToBytes(input: string): Uint8Array {
+  const normalized = input.replace(/\r\n/g, "\n").replace(/=\n/g, "");
+  const out: number[] = [];
+
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
+    if (ch === "=") {
+      const hex = normalized.slice(i + 1, i + 3);
+      if (/^[0-9a-fA-F]{2}$/.test(hex)) {
+        out.push(parseInt(hex, 16));
+        i += 2;
+        continue;
+      }
+    }
+    out.push(ch.charCodeAt(0) & 0xff);
+  }
+
+  return Uint8Array.from(out);
+}
+
+function decodeBytesWithCharset(bytes: Uint8Array, charset: string): string {
+  try {
+    return new TextDecoder(normalizeCharset(charset)).decode(bytes);
+  } catch {
+    try {
+      return new TextDecoder("utf-8").decode(bytes);
+    } catch {
+      return Buffer.from(bytes).toString("utf8");
+    }
+  }
+}
+
+function normalizeCharset(charset: string): string {
+  const c = (charset ?? "").toLowerCase();
+  if (["shift-jis", "shift_jis", "sjis", "x-sjis", "ms932", "windows-31j", "cp932"].includes(c)) {
+    return "shift_jis";
+  }
+  if (c === "euc_jp") return "euc-jp";
+  return c || "utf-8";
+}
+
+function wrapRawMhtmlAsHtml(raw: string): string {
+  const escaped = (raw ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>MHTML Raw</title>
+<style>
+body{margin:0;padding:16px;background:#0b1116;color:#e7eef6;font:12px/1.45 ui-monospace,Consolas,monospace}
+pre{white-space:pre-wrap;word-break:break-word}
+</style></head><body><pre>${escaped}</pre></body></html>`;
+}
 
 // markdown /////////////////////////////////////////////////////////////////////
 function inferLang(mdItLike: string|undefined):string{
@@ -327,6 +541,7 @@ function toFencedMarkdownFromBotResponse(
         return -1;
     };
 
+    // 空白を無視した近似一致 codeをトークンに分割してそれらを\s*でつなげて正規表現にする
     const findCodeRangeIgnoringWhitespace = (
         text: string,
         code: string,
@@ -388,13 +603,14 @@ function toFencedMarkdownFromBotResponse(
         }
     }
 
-    if (appended.length > 0) {
+    // 上手く表示されなかったcodeBlockを末尾に表示
+    /*if (appended.length > 0) {
         out = out.replace(/\n{3,}/g, "\n\n").trimEnd();
         out += `\n\n---\n\nRecovered code blocks:\n`;
         for (const a of appended) {
             out += `\n\n\`\`\`${a.lang}\n${a.code}\n\`\`\`\n`;
         }
-    }
+    }*/
 
     out = out.replace(/\n{3,}/g, "\n\n");
     return out.trim();

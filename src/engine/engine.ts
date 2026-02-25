@@ -29,6 +29,8 @@ import {
     ChromePDFHash,
     CodingAgentHash,
     CodingAgentMetadata,
+    ChromeStaticHash,
+    ChromeStaticMetadata,
 } from '../constants/types';
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
@@ -39,7 +41,12 @@ import { fstat } from 'fs';
 import { getParseTreeNode, toEditorSettings } from 'typescript';
 import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-and-store';
 import { setEngine } from 'crypto';
-import { showFullTextAndHighlightText,showFullPdfAndHighligtPdf, showFullMdAndHighlightMd } from './show-information';
+import { 
+  showFullTextAndHighlightText,
+  showFullPdfAndHighligtPdf,
+  showFullMdAndHighlightMd,
+  showFullMhtmlAndHighlightMhtml,
+} from './show-information';
 import { PromptCards } from './prompt-cards';
 import { DiffTracer } from './guess-prompt/diff-tracer';
 
@@ -364,9 +371,28 @@ export class TraceEngine{
                 );
                 return true;
             }
+            case WEB_INFO_SOURCE.CHROME_STATIC:{
+              if(!ah||typeof ah!=="object"||!("mhtmlHash" in ah)){
+                throw new Error("mhtmlHash is not available for this metadata");
+              }
+              const mhtmlHash=(ah as ChromeStaticHash).mhtmlHash;
+
+              const mhtmlText=await this.restoreTextByHash(mhtmlHash);
+              const copiedText=await this.restoreTextByHash(metaData.originalHash);
+
+              await showFullMhtmlAndHighlightMhtml(
+                metaHash,
+                mhtmlText,
+                copiedText,
+                this.context,
+              );
+
+              return true;
+              
+            }
             default:
                 throw new Error(`Unsupported meta type:" ${metaData.type}`);
-            }  
+            } 
         }catch(e:any){
             window.showErrorMessage(`failed to open meta: ${e?.message ?? e}`);
             return false;

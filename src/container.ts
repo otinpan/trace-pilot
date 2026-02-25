@@ -288,6 +288,7 @@ export class Container{
 
     }
 
+    // promtCardの作成
     private async enableWorktreeWatcher(){
       const repoPath=await getRepositoryPathOrNull();
       if(!repoPath){

@@ -4,6 +4,7 @@ export enum WEB_INFO_SOURCE{
     CHAT_GPT="CHAT_GPT",
     CODING_AGENT="CODING_AGENT",
     CHROME_PDF="CHROME_PDF",
+    CHROME_STATIC="CHROME_STATIC",
     VSCODE="VSCODE",
     OTHER="OTHER"
 }
@@ -22,6 +23,7 @@ export type AdditionalHash=
 | VSCodeHash
 | CodingAgentHash
 | ChromePDFHash
+| ChromeStaticHash
 | GPTHash
 | null;
 
@@ -37,6 +39,10 @@ export interface CodingAgentHash{
 
 export interface ChromePDFHash{
     fullTextHash: string;
+}
+
+export interface ChromeStaticHash{
+  mhtmlHash: string;
 }
 
 export interface GPTHash{
@@ -68,11 +74,13 @@ export type AdditionalMetadata=
 | CodingAgentMetadata
 | VSCodeMetadata
 | ChromePDFMetadata
+| ChromeStaticMetadata
 | null;
 
 export interface GPTMetadata{
     isText: boolean;
 }
+
 
 export interface CodingAgentMetadata{
   isText:boolean;
@@ -85,6 +93,11 @@ export interface ChromePDFMetadata{
     isText:boolean;
 }
 
+export interface ChromeStaticMetadata{
+  isText: boolean;
+  encoding: string;
+  title?: string;
+}
 
 
 export interface ThreadPair{
