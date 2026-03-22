@@ -5,6 +5,7 @@ export enum WEB_INFO_SOURCE{
     CODING_AGENT="CODING_AGENT",
     CHROME_PDF="CHROME_PDF",
     CHROME_STATIC="CHROME_STATIC",
+    GOOGLE_SHEETS="GOOGLE_SHEETS",
     VSCODE="VSCODE",
     OTHER="OTHER"
 }
@@ -25,6 +26,7 @@ export type AdditionalHash=
 | ChromePDFHash
 | ChromeStaticHash
 | GPTHash
+| GoogleSheetsHash
 | null;
 
 export interface VSCodeHash{
@@ -43,6 +45,11 @@ export interface ChromePDFHash{
 
 export interface ChromeStaticHash{
   mhtmlHash: string;
+}
+
+export interface GoogleSheetsHash{
+  selectedHash: string,
+  snapshotHash: string,
 }
 
 export interface GPTHash{
@@ -75,6 +82,7 @@ export type AdditionalMetadata=
 | VSCodeMetadata
 | ChromePDFMetadata
 | ChromeStaticMetadata
+| GoogleSheetsMetadata
 | null;
 
 export interface GPTMetadata{
@@ -99,6 +107,10 @@ export interface ChromeStaticMetadata{
   title?: string;
 }
 
+export interface GoogleSheetsMetadata{
+  isText: boolean;
+  name?: string;
+}
 
 export interface ThreadPair{
     id: string;
