@@ -48,11 +48,13 @@ export class PromptCards{
   public times: number[]; //ソート用の配列
   public timesToHash: Map<number,string>; // timeからpromptHash+generatedHashへの変換
   public hashToPromptMetadata: Map<string,PromptMetadata>; // promptHash+generatedHashからPromptMetadataへの変換
+  private initialized: boolean;
 
   constructor(){
     this.times=[];
     this.timesToHash=new Map<number,string>();
     this.hashToPromptMetadata=new Map<string,PromptMetadata>();
+    this.initialized=false;
   }
 
   add(meta: Metadata,hash:string): boolean{
@@ -129,11 +131,15 @@ export class PromptCards{
         continue;
       }
     }
+    this.initialized=true;
     return true;
   }
 
   // blobPathからmatadataとhash値をaddに渡す
   async addPromptCards(blobPath:string):Promise<boolean>{
+    if(!this.initialized){
+      return false;
+    }
     if(!blobPath.endsWith(".bin")){
       return false;
     }
@@ -165,6 +171,12 @@ export class PromptCards{
   ):Promise<boolean>{
     if(!isAllowedSource(meta.type)){
       return false;
+    }
+    if(!this.initialized){
+      const ok=await this.remakePromptCards();
+      if(!ok){
+        return false;
+      }
     }
     const { promptHash, generatedHash }=getPromptAndGeneratedHash(meta);
     const pairHash=`${promptHash}:${generatedHash}`;

@@ -13,6 +13,7 @@ import{
     TextEditorDecorationType,
     DecorationOptions,
     workspace,
+    RelativePattern,
 } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
@@ -31,6 +32,8 @@ import {
     CodingAgentMetadata,
     ChromeStaticHash,
     ChromeStaticMetadata,
+    GoogleSheetsHash,
+    GoogleSheetsMetadata,
 } from '../constants/types';
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
 import { spawn } from 'child_process';
@@ -46,9 +49,13 @@ import {
   showFullPdfAndHighligtPdf,
   showFullMdAndHighlightMd,
   showFullMhtmlAndHighlightMhtml,
+  showFullGoogleSheetsAndHighlightGoogleSheets,
 } from './show-information';
 import { PromptCards } from './prompt-cards';
 import { DiffTracer } from './guess-prompt/diff-tracer';
+
+const EXTERNAL_DIFF_WATCH_GLOB =
+    "**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,md,txt,py,rb,php,java,go,rs,c,cc,cpp,h,hpp,cs,swift,kt,kts,scala,lua,pl,sh,bash,zsh,fish,yaml,yml,toml,xml,html,css,scss,sass,less,sql}";
 
 export class TraceEngine{
     public highlightDeco?: TextEditorDecorationType;
@@ -59,7 +66,6 @@ export class TraceEngine{
         private readonly context: ExtensionContext
     ){
       this.promptCards=new PromptCards();
-      void this.promptCards.remakePromptCards();
 
       this.diffTracer=new DiffTracer(this.context);
     };
@@ -79,16 +85,25 @@ export class TraceEngine{
         const createDisposable=workspace.onDidCreateFiles((event)=>{
             void this.diffTracer.onCreate(event);
         });
-        const externalCreateWatcher=workspace.createFileSystemWatcher("**/*",false,false,false);
-        externalCreateWatcher.onDidCreate((uri)=>{
-            void this.diffTracer.onFsCreate(uri);
-        });
-        externalCreateWatcher.onDidChange((uri)=>{
-            this.diffTracer.onFsChange(uri);
-        });
-        externalCreateWatcher.onDidDelete((uri)=>{
-            this.diffTracer.onFsDelete(uri);
-        });
+        const externalWatchers: Disposable[] = [];
+        for(const folder of workspace.workspaceFolders ?? []){
+            const watcher=workspace.createFileSystemWatcher(
+                new RelativePattern(folder, EXTERNAL_DIFF_WATCH_GLOB),
+                false,
+                false,
+                false
+            );
+            watcher.onDidCreate((uri)=>{
+                void this.diffTracer.onFsCreate(uri);
+            });
+            watcher.onDidChange((uri)=>{
+                this.diffTracer.onFsChange(uri);
+            });
+            watcher.onDidDelete((uri)=>{
+                this.diffTracer.onFsDelete(uri);
+            });
+            externalWatchers.push(watcher);
+        }
         const changeDisposable=workspace.onDidChangeTextDocument((event)=>{
             this.diffTracer.onChange(event);
         });
@@ -105,11 +120,11 @@ export class TraceEngine{
         this.diffTracerDisposables.push(
             openDisposable,
             createDisposable,
-            externalCreateWatcher,
             changeDisposable,
             closeDisposable,
             flushDisposable,
             guessPromptDisposable,
+            ...externalWatchers,
         );
         return this.diffTracerDisposables;
     }
@@ -239,6 +254,7 @@ export class TraceEngine{
             const metaData=JSON.parse(metaJSON) as Metadata;
             const ah=metaData.additionalHash;
             const add=metaData.additionalMetaData;
+            console.log("metadata type: ",metaData.type);
             switch(metaData.type){
             case WEB_INFO_SOURCE.VSCODE:{
                 if(!ah||typeof ah!=="object"||!("fullTextHash" in ah)){
@@ -370,6 +386,26 @@ export class TraceEngine{
                     this.context
                 );
                 return true;
+            }
+            case WEB_INFO_SOURCE.GOOGLE_SHEETS:{
+              if(!ah||typeof ah!="object"||!("selectedHash" in ah)||!("snapshotHash" in ah)){
+                throw new Error("selectedHash of snapshotHash is not available for this metadata");
+              }
+
+              const selectedHash=(ah as GoogleSheetsHash).selectedHash;
+              const snapshotHash=(ah as GoogleSheetsHash).snapshotHash;
+
+              const selectedText=await this.restoreTextByHash(selectedHash);
+              const snapshotText=await this.restoreTextByHash(snapshotHash);
+
+              await showFullGoogleSheetsAndHighlightGoogleSheets(
+                metaHash,
+                selectedText,
+                snapshotText,
+                this.context,
+              );
+              return true;
+
             }
             case WEB_INFO_SOURCE.CHROME_STATIC:{
               if(!ah||typeof ah!=="object"||!("mhtmlHash" in ah)){

@@ -24,6 +24,8 @@ import { RestoredCodeBlock } from '../constants/types';
 import { cachedDataVersionTag } from 'v8';
 import * as vscode from "vscode";
 
+
+// VSCode ///////////////////////////////////////////////////////////////////////////////////////////
 // full textからneedleを見つけてRangeを返す
 export function findAllRanges(fullText: string, needle: string): Range[] {
     if (!needle) return [];
@@ -82,6 +84,8 @@ export async function showFullTextAndHighlightText(fullText: string,copiedText: 
     }
 }
 
+
+// pdf ///////////////////////////////////////////////////////////////////////////////////////////////
 // git hash-object hash でpdfバイナリを返す
 async function gitCatFileBlobBytes(cwd:string,hash:string):Promise<Buffer>{
     return new Promise((resolve,reject)=>{
@@ -221,7 +225,7 @@ function webviewContentPDF(extensionPath: string, srcPdfPath: string, webview: W
     return html;
 }
 
-// mhtml //////////////////////////////////////////////////////////////////
+// mhtml ////////////////////////////////////////////////////////////////////////////////////////////////
 export async function showFullMhtmlAndHighlightMhtml(
   hash: string,
   mhtmlText: string,
@@ -437,7 +441,7 @@ pre{white-space:pre-wrap;word-break:break-word}
 </style></head><body><pre>${escaped}</pre></body></html>`;
 }
 
-// markdown /////////////////////////////////////////////////////////////////////
+// markdown /////////////////////////////////////////////////////////////////////////////////////////////
 function inferLang(mdItLike: string|undefined):string{
     const s=(mdItLike??"").trim();
     const m = s.match(/!\s*([a-zA-Z0-9_+-]+)/);
@@ -712,4 +716,61 @@ function escapeForHtmlTemplate(s: string): string {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+}
+
+// GoogleSpreadSheets/////////////////////////////////////////////////////////////////////////////////
+export async function showFullGoogleSheetsAndHighlightGoogleSheets(
+  hash: string,
+  selectedText: string,
+  snapshotText: string,
+  context: ExtensionContext,
+):Promise<void>{
+  const panel=window.createWebviewPanel(
+    "trace-pilot.google-spread-sheets",
+    `Trace-Pilot GoogleSpreadSheets: ${hash.slice(0,8)}`,
+    ViewColumn.Active,
+    {enableScripts: true}
+  );
+
+  panel.webview.options={
+    enableScripts: true,
+    localResourceRoots:[
+      Uri.joinPath(context.extensionUri,"media"),
+    ]
+  };
+
+  panel.webview.html=webviewContentGoogleSheets(
+    context.extensionUri.fsPath,
+    panel.webview,
+    hash,
+    selectedText,
+    snapshotText,
+  );
+}
+
+function webviewContentGoogleSheets(
+  extensionPath: string,
+  webview: Webview,
+  hash: string,
+  selectedText: string,
+  snapshotText: string,
+): string{
+  const htmlPath=path.join(extensionPath, "media","show_googlesheets.html");
+  const jsPath=path.join(extensionPath,"media","show_googlesheets.js");
+  const nonce=getNonce();
+
+  const jsUri=webview.asWebviewUri(Uri.file(jsPath));
+
+  let html=fs.readFileSync(htmlPath,"utf8");
+  html=replaceAllToken(html,"cspSource",webview.cspSource);
+  html=replaceAllToken(html,"nonce",nonce);
+  html=replaceAllToken(html,"showGoogleSheetsJsUri",jsUri.toString());
+  html=replaceAllToken(html,"hashShort",hash.slice(0,8));
+  html=replaceAllToken(html,"selectedJson",escapeForHtmlTemplate(selectedText));
+  html=replaceAllToken(html,"snapshotJson",escapeForHtmlTemplate(snapshotText));
+  
+  const leftovers = html.match(/\{\{\s*\w+\s*\}\}/g);
+  if(leftovers) console.error("Unreplaced template tokens remain:", leftovers);
+
+  return html;
 }
