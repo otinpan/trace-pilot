@@ -16,7 +16,8 @@ This tool currently runs on Linux.
 
 ## Related Project
 
-The Chrome extension side of Trace-Pilot is provided as the companion project `trace-pilot-chrome`.
+The Chrome extension side of Trace-Pilot is provided as the companion project 
+https://github.com/otinpan/trace-pilot-chrome
 
 It captures content from the browser, stores source data, and passes trace markers that can later be resolved by this VS Code extension.
 
