@@ -23,11 +23,13 @@ import {Container} from './container';
 import {getRepositoryPath, getRepositoryPathOrNull} from './repository/repository';
 import { markAsUntransferable } from 'worker_threads';
 import {MetaData,CopiedContent,TraceMetaEntry} from './common';
+import { initializeOpenAIKeyStore } from './openai-api-key';
 
 const simbolTracePilot:string='@trace-pilot';
 
 
 export async function activate(context: ExtensionContext) {
+	initializeOpenAIKeyStore(context);
 
 	const container=await Container.create(context);
 	console.log("[Trace-Pilot] activated");

@@ -23,6 +23,10 @@ import { Z_PARTIAL_FLUSH } from 'zlib';
 import { WEB_INFO_SOURCE } from './constants/types';
 import { ensureWorktree } from './repository/worktree';
 import { getRepositoryPathOrNull } from './repository/repository';
+import {
+  deleteStoredOpenAIKey,
+  promptForAndStoreOpenAIKey,
+} from './openai-api-key';
 export class Container{
     // プロジェクト内でインスタンスを1つに限定
     static #instance: Container | undefined;
@@ -35,6 +39,8 @@ export class Container{
     private codelensDisposable: Disposable | undefined;
     private openMetaDisposable: Disposable | undefined;
     private openPromptCardsDisposable: Disposable | undefined;
+    private setOpenAIApiKeyDisposable: Disposable | undefined;
+    private clearOpenAIApiKeyDisposable: Disposable | undefined;
 
     public constructor(
         readonly context: ExtensionContext,
@@ -49,6 +55,8 @@ export class Container{
         this.enableCodeLensProvider();
         this.enableOpenMetaCommand();
         this.enableOpenPromptCardsCommand();
+        this.enableSetOpenAIApiKeyCommand();
+        this.enableClearOpenAIApiKeyCommand();
         this.enableWorktreeWatcher();
         this.enableDiffTracer();
     }
@@ -286,6 +294,40 @@ export class Container{
       this.context.subscriptions.push(this.openPromptCardsDisposable);
       this.disposables.push(this.openPromptCardsDisposable);
 
+    }
+
+    private enableSetOpenAIApiKeyCommand(){
+      if(this.setOpenAIApiKeyDisposable)return;
+
+      this.setOpenAIApiKeyDisposable=commands.registerCommand(
+        "trace-pilot.setOpenAIApiKey",
+        async()=>{
+          const apiKey=await promptForAndStoreOpenAIKey();
+          if(!apiKey){
+            return;
+          }
+
+          window.showInformationMessage("Trace-Pilot: OpenAI API key saved securely.");
+        }
+      );
+
+      this.context.subscriptions.push(this.setOpenAIApiKeyDisposable);
+      this.disposables.push(this.setOpenAIApiKeyDisposable);
+    }
+
+    private enableClearOpenAIApiKeyCommand(){
+      if(this.clearOpenAIApiKeyDisposable)return;
+
+      this.clearOpenAIApiKeyDisposable=commands.registerCommand(
+        "trace-pilot.clearOpenAIApiKey",
+        async()=>{
+          await deleteStoredOpenAIKey();
+          window.showInformationMessage("Trace-Pilot: OpenAI API key removed.");
+        }
+      );
+
+      this.context.subscriptions.push(this.clearOpenAIApiKeyDisposable);
+      this.disposables.push(this.clearOpenAIApiKeyDisposable);
     }
 
     // promtCardの作成

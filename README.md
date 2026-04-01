@@ -106,6 +106,8 @@ After you modify files, clicking `guess prompt` uses the recorded diffs to infer
 
 Trace-Pilot also generates links for the changed locations so the inferred prompt can be inspected alongside the affected code.
 
+This feature requires an OpenAI API key. You can set it from the Command Palette with `Trace Pilot: Set OpenAI API Key`. The key is stored in VS Code secret storage. If `OPENAI_API_KEY` is already set in the environment used to launch VS Code, Trace-Pilot will use that instead.
+
 ![](Assets/GuessPromptCards_button.png)
 ![](Assets/GuessPromptCards_link.png)
 ![](Assets/GuessPromptCards_promptcards.png)
@@ -146,6 +148,20 @@ Trace-Pilot has not been released yet, but the intended workflow is:
 4. Use `Open source` to restore the original source and surrounding context.
 5. Use `Open PromptCards` for prompt-based traces when available.
 6. Use `guess prompt` and `save diff` to inspect AI-assisted edits.
+
+## OpenAI API Key
+
+`guess prompt` and PromptCard generation require an OpenAI API key.
+
+To set it in VS Code:
+
+1. Open the Command Palette.
+2. Run `Trace Pilot: Set OpenAI API Key`.
+3. Paste your API key into the input box.
+
+The key is stored securely using VS Code secret storage.
+
+If you prefer, you can also launch VS Code with `OPENAI_API_KEY` set in the environment. That environment variable takes precedence over the stored key.
 
 ## Features By Source
 

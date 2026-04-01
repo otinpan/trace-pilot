@@ -2,7 +2,22 @@
   "name": "trace-pilot",
   "displayName": "trace_pilot",
   "description": "",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "publisher": "Otinpan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/otinpan/trace-pilot.git"
+  },
+  "files": [
+    "dist",
+    "media",
+    "Assets",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "package.json"
+  ],
   "engines": {
     "vscode": "^1.106.1"
   },
@@ -10,7 +25,7 @@
     "Other"
   ],
   "activationEvents": [],
-  "main": "./dist/extension.js",
+  "main": "dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -50,6 +65,16 @@
         "category": "Trace Pilot",
         "command": "trace-pilot.openPromptCards",
         "title": "openPromptCards"
+      },
+      {
+        "category": "Trace Pilot",
+        "command": "trace-pilot.setOpenAIApiKey",
+        "title": "Set OpenAI API Key"
+      },
+      {
+        "category": "Trace Pilot",
+        "command": "trace-pilot.clearOpenAIApiKey",
+        "title": "Clear OpenAI API Key"
       }
     ],
     "menus": {

@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import { LinkableRecord } from "./diff-tracer";
 import {
-  workspace,
   window,
 }from "vscode"
 import { calculateHashAndStore } from "../hash-and-store";
@@ -12,20 +11,7 @@ import {
   CodingAgentMetadata,
   CodeBlockHash,
 } from "../../constants/types";
-
-if (typeof process.loadEnvFile === "function") {
-  process.loadEnvFile("/home/hase/thesis/trace-pilot/.env");
-}
-
-const apiKey=process.env.OPENAI_API_KEY ?? 
-  workspace.getConfiguration("tracePilot").get<string>("openaiApiKey");
-
-if(!apiKey){
-  throw new Error("OpenAI API key is missing");
-  window.showWarningMessage("OpenAI API key is missing");
-}
-
-const client=new OpenAI({apiKey});
+import { getOrPromptOpenAIKey } from "../../openai-api-key";
 
 type JSONSchemaObject=Record<string,unknown>;
 export type GuessedOutput={
@@ -100,6 +86,8 @@ async function callLLMJSONSchema(args:{
   userPrompt: string;
   schema: JSONSchemaObject;
 }):Promise<unknown>{
+  const apiKey=await getOrPromptOpenAIKey();
+  const client=new OpenAI({apiKey});
   const res=await client.responses.create({
     model: "gpt-4.1-mini",
     input: [
