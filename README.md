@@ -8,7 +8,7 @@ This helps teams keep copied code and text explainable, auditable, and easier to
 
 ## Status
 
-Trace-Pilot is still under development and has not been publicly released yet.
+Trace-Pilot is published ver0.1.0
 
 ## Platform
 
