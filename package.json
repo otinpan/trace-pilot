@@ -68,6 +68,11 @@
       },
       {
         "category": "Trace Pilot",
+        "command": "trace-pilot.openSummary",
+        "title": "openSummary"
+      },
+      {
+        "category": "Trace Pilot",
         "command": "trace-pilot.setOpenAIApiKey",
         "title": "Set OpenAI API Key"
       },

@@ -2,16 +2,10 @@ import{
     ExtensionContext,
     Disposable,
     commands,
-    TextEditor,
-    TextEditorEdit,
     Uri,
-    Range,
-    Position,
     window,
     env,
-    DocumentDropEdit,
     TextEditorDecorationType,
-    DecorationOptions,
     workspace,
     RelativePattern,
 } from 'vscode';
@@ -20,30 +14,17 @@ import * as path from "path";
 import {
     Metadata,
     WEB_INFO_SOURCE,
-    AdditionalHash,
     VSCodeMetadata,
     VSCodeHash,
     GPTHash,
     RestoredCodeBlock,
-    GPTMetadata,
-    ChromePDFMetadata,
-    ChromePDFHash,
     CodingAgentHash,
-    CodingAgentMetadata,
     ChromeStaticHash,
-    ChromeStaticMetadata,
     GoogleSheetsHash,
-    GoogleSheetsMetadata,
 } from '../constants/types';
 import {getRepositoryPath,getRepositoryPathOrNull} from '../repository/repository';
-import { spawn } from 'child_process';
-import { ensureWorktree } from '../repository/worktree';
-import { json, text } from 'stream/consumers';
 import {execGit,getActiveUri} from "../common";
-import { fstat } from 'fs';
-import { getParseTreeNode, toEditorSettings } from 'typescript';
 import { calculateHashAndStore,calculateHashAndStoreFromBuffer } from './hash-and-store';
-import { setEngine } from 'crypto';
 import { 
   showFullTextAndHighlightText,
   showFullPdfAndHighligtPdf,
@@ -53,6 +34,7 @@ import {
 } from './show-information';
 import { PromptCards } from './prompt-cards';
 import { DiffTracer } from './guess-prompt/diff-tracer';
+import { showSummary } from './gpt-summarize';
 
 const EXTERNAL_DIFF_WATCH_GLOB =
     "**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,md,txt,py,rb,php,java,go,rs,c,cc,cpp,h,hpp,cs,swift,kt,kts,scala,lua,pl,sh,bash,zsh,fish,yaml,yml,toml,xml,html,css,scss,sass,less,sql}";
@@ -464,6 +446,18 @@ export class TraceEngine{
         return false;
       }
     }
+
+    async VSCodeShowSummary(metaHash:string):Promise<boolean>{
+      try{
+        const metaJSON=await this.restoreTextByHash(metaHash);
+        const metaData=JSON.parse(metaJSON) as Metadata;
+        return showSummary(this.context,metaData);
+      }catch{
+        console.log("failed to summarize");
+        return false;
+      }
+    }
+
     async remakePromptCards():Promise<boolean>{
       console.log(this.promptCards.times);
       console.log(this.promptCards.timesToHash);

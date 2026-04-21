@@ -39,6 +39,7 @@ export class Container{
     private codelensDisposable: Disposable | undefined;
     private openMetaDisposable: Disposable | undefined;
     private openPromptCardsDisposable: Disposable | undefined;
+    private openSummaryDisposable: Disposable | undefined;
     private setOpenAIApiKeyDisposable: Disposable | undefined;
     private clearOpenAIApiKeyDisposable: Disposable | undefined;
 
@@ -55,6 +56,7 @@ export class Container{
         this.enableCodeLensProvider();
         this.enableOpenMetaCommand();
         this.enableOpenPromptCardsCommand();
+        this.enableOpenSummaryCommand();
         this.enableSetOpenAIApiKeyCommand();
         this.enableClearOpenAIApiKeyCommand();
         this.enableWorktreeWatcher();
@@ -167,6 +169,8 @@ export class Container{
                        type===WEB_INFO_SOURCE.CODING_AGENT){
                       const promptCmdUri=`command:trace-pilot.openPromptCards?${args}`;
                       md.appendMarkdown(`\n[Open PromptCards](${promptCmdUri})\n`);
+                      const summaryCmdUri=`command:trace-pilot.openSummary?${args}`;
+                      md.appendMarkdown(`\n[Open Summary](${summaryCmdUri})`);
                     }
 
 
@@ -219,6 +223,12 @@ export class Container{
                         arguments: [metaHash],
                       };
                       lenses.push(new CodeLens(range,cmdPrompt));
+                      const cmdSummary:Command={
+                        title: `Trace-Pilot: Open Summary`,
+                        command: "trace-pilot.openSummary",
+                        arguments: [metaHash],
+                      };
+                      lenses.push(new CodeLens(range,cmdSummary));
                     }
                     lenses.push(new CodeLens(range,cmdMeta));
                 }
@@ -294,6 +304,23 @@ export class Container{
       this.context.subscriptions.push(this.openPromptCardsDisposable);
       this.disposables.push(this.openPromptCardsDisposable);
 
+    }
+
+    private enableOpenSummaryCommand(){
+      if(this.openSummaryDisposable)return;
+
+      const openSummaryCommandID="trace-pilot.openSummary";
+      this.openSummaryDisposable=commands.registerCommand(openSummaryCommandID,
+                                                         async(metaHash: string)=>{
+        let ok:boolean=await this.engine.VSCodeShowSummary(metaHash);
+
+        if(!ok){
+          window.showWarningMessage(`Trace-Pilot: failed to summary ${metaHash}`);
+          return;
+        }
+      });
+      this.context.subscriptions.push(this.openSummaryDisposable);
+      this.disposables.push(this.openSummaryDisposable);
     }
 
     private enableSetOpenAIApiKeyCommand(){

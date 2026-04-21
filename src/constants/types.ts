@@ -56,7 +56,7 @@ export interface GPTHash{
     promptHash: string;
     generatedHash: string;
     codeBlockHashes: CodeBlockHash[],
-
+    contextThreadPairsHash?: string,
 }
 
 export interface CodeBlockHash{
