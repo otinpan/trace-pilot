@@ -8,7 +8,7 @@ This helps teams keep copied code and text explainable, auditable, and easier to
 
 ## Status
 
-Trace-Pilot is published ver0.1.0
+Trace-Pilot is published ver1.1.0
 
 ## Platform
 
@@ -64,7 +64,8 @@ From left to right:
 - `copy & store`
 - `guess prompt`
 - `save diff`
-
+- `open PromptCards`
+- `Summarize prompt-output pair`
 
 ### Copy And Store
 
@@ -117,6 +118,15 @@ This feature requires an OpenAI API key. You can set it from the Command Palette
 Trace-Pilot watches file edits and can flush recorded diffs into its trace data using `save diff`.
 
 This helps preserve the relationship between code changes and the prompts or actions that likely produced them.
+
+### Summarize Prompt-Output pair
+* Implemented OpenSummary to support responses based on multiple interactions with the LLM.
+* OpenSummary clarifies the intent of pasted text by summarizing the most recent three prompt-response pairs from the conversation history.
+* This addresses cases such as prompts like "fix previous code", where the intent cannot be understood without prior context.
+* When no recent prompt-response history is available, OpenSummary falls back to summarizing from the single prompt-response pair contained in the pasted text.
+
+![](Assets/OpenSummary_original_pair.png)
+![](Assets/OpenSummary.png)
 
 ## Why Use It
 
