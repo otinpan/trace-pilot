@@ -12,7 +12,15 @@ Trace-Pilot is published ver1.1.0
 
 ## Platform
 
-This tool currently runs on Linux.
+Trace-Pilot is implemented as a VS Code extension and does not currently depend on Linux-specific features.
+
+It has been used on Linux and Windows environments, as long as VS Code can execute `git` from the launched environment.
+
+Notes:
+
+- `git` must be installed and available on `PATH` for the VS Code process.
+- Trace-Pilot uses `git worktree`, so that command must be available in your Git installation.
+- Platform support has not been exhaustively validated on every environment, so edge cases may still exist.
 
 ## Related Project
 
