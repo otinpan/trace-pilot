@@ -64,6 +64,7 @@ export async function createHashFromCodex(burst: BurstState): Promise<string | n
   return null;
 }
 
+// 各ファイルからCodexPromptPairを作成する
 async function scanCodexSession(filePath: string, burst: BurstState): Promise<CodexPromptPair | null> {
   const content = await readFile(filePath, "utf8");
   const lines = content.split("\n").filter((line) => line.trim() !== "");
@@ -162,6 +163,7 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
   return null;
 }
 
+// CodexPromptPairからhash値を生成する
 async function createMetaHashFromTurn(
   pair: CodexPromptPair,
   records: Map<string, LinkableRecord>,
@@ -220,6 +222,7 @@ function parseCodexEvent(line: string): CodexEvent | null {
   }
 }
 
+// response_itemからcontentを取る
 function extractResponseItemText(content: ResponseItemContent[] | undefined): string {
   if (!content || content.length === 0) {
     return "";
@@ -231,6 +234,7 @@ function extractResponseItemText(content: ResponseItemContent[] | undefined): st
     .trim();
 }
 
+// patch_apply_endからchangesからdiffを抽出する
 function extractPatches(
   changes: Record<string, unknown> | undefined,
 ): CollectedPatch[] | null {
@@ -260,6 +264,7 @@ function extractPatches(
 
 }
 
+// 全てのbatchがburstのどれかに内包されていればtrue
 function checkCollectBatches(
   patches: CollectedPatch[],
   burst: BurstState,
@@ -327,6 +332,8 @@ function normalizeDiff(diff: string): string {
   return kept.join("\n").trim();
 }
 
+
+// burstDiffにpatchDiffが内包されて入ればtrue
 function diffContainsPatch(burstDiff: string, patchDiff: string): boolean {
   if (!burstDiff || !patchDiff) {
     return false;

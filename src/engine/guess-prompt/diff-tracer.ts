@@ -85,11 +85,11 @@ export interface BurstState{
   records: Map<UriKey,LinkableRecord>;
 }
 
-const BURST_IDLE_MS = 2000;
-const EXTERNAL_BURST_IDLE_MS = 500;
+const BURST_IDLE_MS = 3000; // burstを確定させるまでの時間 (Editor)
+const EXTERNAL_BURST_IDLE_MS = 1000; // 外部ファイル書き込みが終わったかを判定する時間
 const MAX_DIFF_CHARS = 200_000;
 const CREATED_DEDUPE_WINDOW_MS = 1000;
-const BURST_GROUP_IDLE_MS=6000; // busrtをcloseするまでの時間
+const BURST_GROUP_IDLE_MS=10_000; // busrtを確定させるまでの時間 (External)
 const IGNORE_PATH_PARTS = [
   "/.git/",
   "/node_modules/",
@@ -243,7 +243,7 @@ export class DiffTracer {
     const key = uri.toString();
     setTimeout(() => {
       void this.refreshExternalBaseline(uri, key);
-    }, 80);
+    }, EXTERNAL_BURST_IDLE_MS);
   }
 
 
