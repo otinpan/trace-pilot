@@ -3,6 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { createTwoFilesPatch } from "diff";
 import { createPromptCard } from "./create-card";
+import { createHashFromCodex } from "./check-codex";
+
 type UriKey = string;
 
 interface Snapshot {
@@ -74,11 +76,12 @@ export interface LinkableRecord {
   diff_unified: string;
 }
 
-interface BurstState{
+export interface BurstState{
   id: number;
   ts_start: number;
   ts_last: number;
   timer?: NodeJS.Timeout;
+  burst_time?: number;
   records: Map<UriKey,LinkableRecord>;
 }
 
@@ -123,10 +126,10 @@ export class DiffTracer {
 
   // burst管理
   private burstId: number=0;
-  private currentBurst: BurstState |null=null;
-  private latestCloseBurst: BurstState | null=null;
+  private currentBurst: BurstState |null=null; // 現在開いているburst
+  private latestCloseBurst: BurstState | null=null; // closeCurrentBurst()が呼ばれたときに、currentBurstの中身を退避する
 
-  // 外部空の変更
+  // 外部からの変更
   private externalSnapshots = new Map<UriKey, ExternalSnapshot>(); 
   private externalPending = new Map<UriKey, ExternalPending>();
 
@@ -198,6 +201,7 @@ export class DiffTracer {
 
     if(b.timer)clearTimeout(b.timer);
     b.timer=undefined;
+    b.burst_time=Date.now();
 
     console.log("close: ",b);
     this.latestCloseBurst=b;
@@ -241,6 +245,7 @@ export class DiffTracer {
       void this.refreshExternalBaseline(uri, key);
     }, 80);
   }
+
 
   private async refreshExternalBaseline(uri: vscode.Uri, key: UriKey): Promise<void> {
     const liveDoc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
@@ -324,7 +329,7 @@ export class DiffTracer {
     this.externalSnapshots.delete(key);
   }
 
-  // jsonlに保存して、lastRecordsにキャッシュする
+  // 外部変更により自動的に呼ばれるflush
   private async flushExternal(uri: vscode.Uri, key: UriKey): Promise<void> {
     const batch = this.externalPending.get(key);
     if (!batch) return;
@@ -355,6 +360,7 @@ export class DiffTracer {
       "snapshot",
       "external"
     );
+
 
     const change: ChangeRecord = {
       range: { start: { line: 0, character: 0 }, end: { line: countNewlines(before), character: 0 } },
@@ -428,7 +434,7 @@ export class DiffTracer {
     }
   }
 
-
+  // 手動によるflush
   async flushAll(reason: "manual" | "shutdown", notify = true) {
     for (const doc of vscode.workspace.textDocuments) {
       const key = doc.uri.toString();
@@ -449,6 +455,7 @@ export class DiffTracer {
     await this.removeTracerDir();
   }
 
+  // editor内での変更
   private async flush(doc: vscode.TextDocument, reason: "idle" | "close" | "manual" | "shutdown") {
     const key = doc.uri.toString();
     const batch = this.pending.get(key);
@@ -503,11 +510,15 @@ export class DiffTracer {
     // もしburstが動いているなら、一旦閉じる
     if(this.currentBurst)this.closeCurrentBurst();
 
-    //console.log("latestCloseBurst: ",this.latestCloseBurst);
     const b=this.latestCloseBurst;
     if(!b||b.records.size===0)return;
 
-    const metaHash=await createPromptCard(b.records);
+    // this.latestCloseBurstとcodexを比較
+    let metaHash=await createHashFromCodex(b);
+    if (metaHash===null){
+      // guessPromptにより作成
+      metaHash=await createPromptCard(b.records);
+    }
 
     for (const key of b.records.keys()) {
       await this.stickLink(key,metaHash);
