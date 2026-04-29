@@ -274,22 +274,20 @@ function checkCollectBatches(
     diff_unified: normalizeDiff(record.diff_unified),
   }));
 
-  for (const patch of patches) {
-    console.log("patch\n",patch);
-    if (
-      burstPatches.some(
-        (burstPatch) =>
-          burstPatch.path === patch.path &&
-          diffContainsPatch(burstPatch.diff_unified, patch.diff_unified),
-      )
-    ) {
-      console.log("collect patch\n",patch);
-      console.log("match burst\n",burst);
-      return true;
-    }
+  const allMatched = patches.every((patch) =>
+    burstPatches.some(
+      (burstPatch) =>
+        burstPatch.path === patch.path &&
+        diffContainsPatch(burstPatch.diff_unified, patch.diff_unified),
+    ),
+  );
+
+  if (allMatched) {
+    console.log("collect patches\n", patches);
+    console.log("match burst\n", burst);
   }
 
-  return false;
+  return allMatched;
 }
 
 function normalizePath(filePath: string): string {
