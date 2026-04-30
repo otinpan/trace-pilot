@@ -35,6 +35,30 @@ async function catFileBlob(hash: string,repoPath:string):Promise<string>{
   return stdout;
 }
 
+async function ensureTraceStoreWorktree(repoPath: string): Promise<string> {
+  const worktreeRoot = path.join(repoPath, ".trace-worktree");
+
+  if (!fs.existsSync(worktreeRoot)) {
+    try {
+      await execGit(["worktree", "add", worktreeRoot, "trace-store"], repoPath);
+    } catch {
+      await execGit(["worktree", "add", "--orphan", "-b", "trace-store", worktreeRoot], repoPath);
+    }
+  }
+
+  try {
+    await execGit(["reset", "--hard"], worktreeRoot);
+  } catch {
+    // orphan branch may be unborn on first creation
+  }
+
+  await execGit(["clean", "-fd"], worktreeRoot);
+  await execGit(["config", "user.name", "trace-test"], worktreeRoot);
+  await execGit(["config", "user.email", "trace-test@example.com"], worktreeRoot);
+
+  return worktreeRoot;
+}
+
 // .gitが存在するフォルダにたどり着いているか
 suite("Get Git repository path", () => {
   test("getRepositoryPath from ~/thesis/trace-pilot/src/engine", async () => {
@@ -94,20 +118,7 @@ suite("Is Blob object staged", () => {
     const cwdPath = path.join(home, "thesis", "trace-pilot", "src", "engine");
     repoPath = await repository.getRepositoryPath(cwdPath);
 
-    worktreeRoot = path.join(repoPath, ".trace-worktree");
-
-    // worktree が無いなら作る（必要なら）
-    if (!fs.existsSync(worktreeRoot)) {
-      await execGit(["worktree", "add", worktreeRoot, "trace-store"], repoPath);
-    }
-
-    // ★ここに付ける
-    await execGit(["reset", "--hard"], worktreeRoot);
-    await execGit(["clean", "-fd"], worktreeRoot);
-
-    // commit が落ちないように user 設定（テスト環境用）
-    await execGit(["config", "user.name", "trace-test"], worktreeRoot);
-    await execGit(["config", "user.email", "trace-test@example.com"], worktreeRoot);
+    worktreeRoot = await ensureTraceStoreWorktree(repoPath);
   });
 
   // ステージングされたかどうか
@@ -161,22 +172,9 @@ suite("Is metadata stored correctly",function (){
     const cwdPath = path.join(home, "thesis", "trace-pilot", "src", "engine");
     repoPath = await repository.getRepositoryPath(cwdPath);
 
-    worktreeRoot = path.join(repoPath, ".trace-worktree");
-
-    // worktree が無いなら作る（必要なら）
-    if (!fs.existsSync(worktreeRoot)) {
-      await execGit(["worktree", "add", worktreeRoot, "trace-store"], repoPath);
-    }
-
-    // ★ここに付ける
-    await execGit(["reset", "--hard"], worktreeRoot);
-    await execGit(["clean", "-fd"], worktreeRoot);
+    worktreeRoot = await ensureTraceStoreWorktree(repoPath);
 
     console.error("worktreeRoot top:", (await execGit(["rev-parse", "--show-toplevel"], worktreeRoot)).stdout.trim());
-
-    // commit が落ちないように user 設定（テスト環境用）
-    await execGit(["config", "user.name", "trace-test"], worktreeRoot);
-    await execGit(["config", "user.email", "trace-test@example.com"], worktreeRoot);
   });
   test("Is metadata stored",async()=>{
     text=`test - -${Date.now()}`;

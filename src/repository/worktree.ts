@@ -35,27 +35,23 @@ export async function ensureWorktree(cwd:string):Promise<boolean>{
         return true;
     }
 
+    const traceStoreExists = cp
+        .spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/trace-store'], { cwd })
+        .status === 0;
 
-    // worktreeがある場合はcheckoutする
+    // ブランチがあれば既存ブランチを使い、なければ orphan worktree を作る
     try{
-        await execAsync('git worktree add .trace-worktree trace-store',cwd);
-    }catch(e1){
-        const msg1=(e1 as Error).message;
+        if(traceStoreExists){
+            await execAsync('git worktree add .trace-worktree trace-store',cwd);
+        }else{
+            await execAsync('git worktree add --orphan -b trace-store .trace-worktree',cwd);
+        }
+    }catch(e){
+        const msg=(e as Error).message;
 
-        // ブランチがないなら作成してcheckoutする
-        try{
-            await execAsync('git worktree add -b trace-store .trace-worktree',cwd);
-            return true;
-        }catch(e2){
-            const msg2=(e2 as Error).message;
-
-            if(!fs.existsSync(worktreeDir)){
-                throw new Error(
-                    `Failed to ensure worktree.\n` +
-                    `First attempt: ${msg1}\n` +
-                    `Second attempt: ${msg2}`
-                );
-            }
+        if(!fs.existsSync(worktreeDir)){
+            const mode = traceStoreExists ? 'existing branch' : 'create orphan branch';
+            throw new Error(`Failed to ensure worktree (${mode}): ${msg}`);
         }
     }
 
