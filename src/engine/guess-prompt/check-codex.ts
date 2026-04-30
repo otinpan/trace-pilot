@@ -73,6 +73,8 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
     assistantMessages: [],
   };
 
+  let isContainingCollectPatches:boolean=false;
+
   for (const line of lines) {
     const event = parseCodexEvent(line);
     if (!event) {
@@ -123,23 +125,35 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
       }
 
       if (payload.type === EventMsgType.task_started) {
+        isContainingCollectPatches=false;
         state.userMessages = [];
         state.assistantMessages = [];
         state.lastTurnTime = typeof payload.started_at === "number" ? payload.started_at * 1000 : undefined;
         continue;
       }
 
-      if (payload.type !== EventMsgType.patch_apply_end) {
-        continue;
+      // 終了
+      if (payload.type===EventMsgType.task_complete){
+        const prompt = state.userMessages.join("\n\n").trim();
+        const generated = state.assistantMessages.join("\n\n").trim();
+        if (!prompt || !generated) {
+          return null;
+        }
+        const eventTime = resolveEventTime(event.timestamp, payload, state.lastTurnTime);
+
+        
+        if(isContainingCollectPatches){
+          return {
+            cwd: state.cwd,
+            prompt,
+            generated,
+            time: eventTime,
+          };
+        }
       }
 
-
-
-
-      const prompt = state.userMessages.join("\n\n").trim();
-      const generated = state.assistantMessages.join("\n\n").trim();
-      if (!prompt || !generated) {
-        return null;
+      if (payload.type !== EventMsgType.patch_apply_end) {
+        continue;
       }
 
       const patches=extractPatches(payload.changes);
@@ -147,15 +161,10 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
         continue;
       }
 
-      const eventTime = resolveEventTime(event.timestamp, payload, state.lastTurnTime);
-      const isCollectPatches=checkCollectBatches(patches, burst);
+      const isCollectPatches=checkCollectPatches(patches, burst);
       if (isCollectPatches){
-        return {
-          cwd: state.cwd,
-          prompt,
-          generated,
-          time: eventTime,
-        };
+        console.log("collect patches\n",patches);
+        isContainingCollectPatches=true;
       }
     }
   }
@@ -265,7 +274,7 @@ function extractPatches(
 }
 
 // 全てのbatchがburstのどれかに内包されていればtrue
-function checkCollectBatches(
+function checkCollectPatches(
   patches: CollectedPatch[],
   burst: BurstState,
 ): boolean {

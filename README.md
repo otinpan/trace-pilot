@@ -41,6 +41,21 @@ This repository contains the VS Code extension side of Trace-Pilot. Its responsi
 - Organizing prompt-and-output pairs as PromptCards
 - Inferring likely prompts from file edits through the `guess prompt` workflow
 
+## How to Push and Pull Trace-Pilot Resources
+Trace-Pilot stores its data in the `.trace-worktree` worktree, checked out to the `trace-store` branch.
+
+If you want to sync Trace-Pilot resources with `origin`, run the following commands from the repository root after `.trace-worktree` has been created.
+
+### Push
+```bash
+git -C .trace-worktree push origin trace-store
+```
+
+### Pull
+```bash
+git -C .trace-worktree pull --ff-only origin trace-store
+```
+
 ## Supported Sources
 
 The VS Code extension currently works with source data from:
