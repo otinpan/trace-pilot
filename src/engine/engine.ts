@@ -305,6 +305,7 @@ export class TraceEngine{
                 const promptHash=(ah as GPTHash).promptHash;
                 const generatedHash=(ah as GPTHash).generatedHash;
                 const codeBlockHashes=(ah as GPTHash).codeBlockHashes;
+                const contextThreadPairsHash=(ah as GPTHash).contextThreadPairsHash;
 
                 const promptText=await this.restoreTextByHash(promptHash);
                 const generatedText=await this.restoreTextByHash(generatedHash);
@@ -321,6 +322,11 @@ export class TraceEngine{
                         };
                     })
                 );
+
+                let contextThreadPairs: string|null=null;
+                if(contextThreadPairsHash){
+                  contextThreadPairs=await this.restoreTextByHash(contextThreadPairsHash);
+               }
                 
                 console.log(restoredBlocks);
 
@@ -330,6 +336,7 @@ export class TraceEngine{
                     promptText,
                     generatedText,
                     restoredBlocks,
+                    contextThreadPairs,
                     this.context
                 );
                 return true;
@@ -341,6 +348,7 @@ export class TraceEngine{
                 const promptHash=(ah as CodingAgentHash).promptHash;
                 const generatedHash=(ah as CodingAgentHash).generatedHash;
                 const codeBlockHashes=(ah as CodingAgentHash).codeBlockHashes;
+                const contextThreadPairsHash=(ah as CodingAgentHash).contextThreadPairsHash;
 
                 const promptText=await this.restoreTextByHash(promptHash);
                 const generatedText=await this.restoreTextByHash(generatedHash);
@@ -357,6 +365,11 @@ export class TraceEngine{
                         };
                     })
                 );
+                let contextThreadPairs:string|null=null;
+                if(contextThreadPairsHash){
+                  contextThreadPairs=await this.restoreTextByHash(contextThreadPairsHash);
+                }
+
                 console.log(restoredBlocks);
 
                 await showFullMdAndHighlightMd(
@@ -365,6 +378,7 @@ export class TraceEngine{
                     promptText,
                     generatedText,
                     restoredBlocks,
+                    contextThreadPairs,
                     this.context
                 );
                 return true;

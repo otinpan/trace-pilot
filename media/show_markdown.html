@@ -102,8 +102,14 @@
     <div id="generated"></div>
   </div>
 
+  <div class="section" id="context-section" style="display:none">
+    <div class="title">Previous Conversation</div>
+    <div id="context-thread-pairs"></div>
+  </div>
+
   <textarea id="tp-prompt" style="display:none">{{promptText}}</textarea>
   <textarea id="tp-generated" style="display:none">{{generatedText}}</textarea>
+  <textarea id="tp-context-thread-pairs" style="display:none">{{contextThreadPairsText}}</textarea>
 
   <script nonce="{{nonce}}" src="{{markdownItUri}}"></script>
   <script nonce="{{nonce}}" src="{{showMarkdownJsUri}}"></script>

@@ -7,6 +7,7 @@ import {
   CodeBlockHash,
   CodingAgentHash,
   Metadata,
+  ThreadPair,
   WEB_INFO_SOURCE,
 } from "../../constants/types";
 import {
@@ -22,6 +23,7 @@ import {
 } from "./codex-type";
 
 interface CodexPromptPair {
+  id: string;
   cwd?: string;
   prompt: string;
   generated: string;
@@ -53,7 +55,7 @@ export async function createHashFromCodex(burst: BurstState): Promise<string | n
   }
 
   for (const file of files) {
-    const matched: CodexPromptPair|null = await scanCodexSession(file, burst);
+    const matched: CodexPromptPair[]|null = await scanCodexSession(file, burst);
     if (!matched) {
       continue;
     }
@@ -65,13 +67,16 @@ export async function createHashFromCodex(burst: BurstState): Promise<string | n
 }
 
 // 各ファイルからCodexPromptPairを作成する
-async function scanCodexSession(filePath: string, burst: BurstState): Promise<CodexPromptPair | null> {
+// 直近3つのthread pairがあるなら取ってくる
+async function scanCodexSession(filePath: string, burst: BurstState): Promise<CodexPromptPair[] | null> {
   const content = await readFile(filePath, "utf8");
   const lines = content.split("\n").filter((line) => line.trim() !== "");
   const state: SessionScanState = {
     userMessages: [],
     assistantMessages: [],
   };
+
+  let codexPromptPairs: CodexPromptPair[]=[];
 
   let isContainingCollectPatches:boolean=false;
 
@@ -125,6 +130,7 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
       }
 
       if (payload.type === EventMsgType.task_started) {
+        // 一度リセット
         isContainingCollectPatches=false;
         state.userMessages = [];
         state.assistantMessages = [];
@@ -141,14 +147,26 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
         }
         const eventTime = resolveEventTime(event.timestamp, payload, state.lastTurnTime);
 
-        
-        if(isContainingCollectPatches){
-          return {
+        // 古いものからpushしていく
+        codexPromptPairs.push(
+          {
+            id: state.currentTurnId ?? `turn-${eventTime}`,
             cwd: state.cwd,
             prompt,
             generated,
             time: eventTime,
-          };
+          }
+        )
+
+        // サイズが3になるようにpop
+        if(codexPromptPairs.length>=4){
+          while(codexPromptPairs.length>=4){
+            codexPromptPairs.shift();
+          }
+        }
+
+        if(isContainingCollectPatches){
+          return codexPromptPairs;
         }
       }
 
@@ -174,11 +192,17 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
 
 // CodexPromptPairからhash値を生成する
 async function createMetaHashFromTurn(
-  pair: CodexPromptPair,
+  pairs: CodexPromptPair[],
   records: Map<string, LinkableRecord>,
 ): Promise<string> {
+  if (pairs.length === 0) {
+    throw new Error("No Codex prompt pairs found");
+  }
+
+  const matched = pairs[pairs.length - 1];
+  const priorPairs = pairs.slice(0, -1);
   const originalHash = await calculateHashAndStore("");
-  const promptHash = await calculateHashAndStore(pair.prompt);
+  const promptHash = await calculateHashAndStore(matched.prompt);
   const recordEntries = Array.from(records.entries());
   const recordsCodeBlock = recordEntries
     .map(([uri, record], index) =>
@@ -191,8 +215,8 @@ async function createMetaHashFromTurn(
     )
     .join("\n\n");
   const generatedText = recordsCodeBlock
-    ? `${recordsCodeBlock}\n\n${pair.generated}`.trim()
-    : pair.generated;
+    ? `${recordsCodeBlock}\n\n${matched.generated}`.trim()
+    : matched.generated;
   const generatedHash = await calculateHashAndStore(generatedText);
   const codeBlockHashes: CodeBlockHash[] = await Promise.all(
     recordEntries.map(async ([, record], index) => ({
@@ -202,10 +226,16 @@ async function createMetaHashFromTurn(
     })),
   );
 
+  // ThreadPairをつなげてJSONにし、Hash化
+  const contextThreadPairsHash = priorPairs.length > 0
+    ? await calculateHashAndStore(JSON.stringify(toThreadPairs(priorPairs)))
+    : undefined;
+
   const additionalHash: CodingAgentHash = {
     promptHash,
     generatedHash,
     codeBlockHashes,
+    contextThreadPairsHash,
   };
 
   const meta: Metadata = {
@@ -213,14 +243,24 @@ async function createMetaHashFromTurn(
     additionalHash,
     url: Array.from(records.keys()).join("\n"),
     type: WEB_INFO_SOURCE.CODING_AGENT,
-    timeCopied: new Date(pair.time).toISOString(),
-    timeCopiedNumber: pair.time,
+    timeCopied: new Date(matched.time).toISOString(),
+    timeCopiedNumber: matched.time,
     additionalMetaData: {
       isText: true,
     },
   };
 
   return calculateHashAndStore(JSON.stringify(meta));
+}
+
+function toThreadPairs(pairs: CodexPromptPair[]): ThreadPair[] {
+  return pairs.map((pair) => ({
+    id: pair.id,
+    time: pair.time,
+    userMessage: pair.prompt,
+    botResponse: pair.generated,
+    codeBlocks: [],
+  }));
 }
 
 function parseCodexEvent(line: string): CodexEvent | null {

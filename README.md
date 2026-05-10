@@ -125,8 +125,13 @@ PromptCards display stored prompt/output pairs from Git. You can browse the coll
 ![](Assets/OpenPromptCards.png)
 
 ### Guess Prompt
+After you modify files, clicking “guess prompt” uses the recorded diffs to infer a likely prompt behind the change.
 
-After you modify files, clicking `guess prompt` uses the recorded diffs to infer a likely prompt behind the change. This is intended for AI-assisted coding workflows such as Codex or Claude Code.
+If the changes originate from **Codex**, the actual prompt–output pairs are stored and used to generate links between the prompt and the modified code.
+
+![](Assets/VSCode_CreateLinkFromCodex.png)
+
+Otherwise, the system falls back to inferring a likely prompt from the recorded diffs.
 
 Trace-Pilot also generates links for the changed locations so the inferred prompt can be inspected alongside the affected code.
 

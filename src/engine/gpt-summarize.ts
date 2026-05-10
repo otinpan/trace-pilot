@@ -29,10 +29,10 @@ function formatContextThreadPairs(threadPairs: ThreadPair[]): string {
       `time: ${pair.time}`,
       "",
       "### Prompt",
-      trimForModel(pair.prompt, 3000),
+      trimForModel(pair.userMessage, 3000),
       "",
       "### Response",
-      trimForModel(pair.response, 5000),
+      trimForModel(pair.botResponse, 5000),
     ].join("\n"))
     .join("\n\n");
 }
@@ -101,6 +101,7 @@ function getPromptAndGeneratedHashes(meta: Metadata): {
       return {
         promptHash: (ah as CodingAgentHash).promptHash,
         generatedHash: (ah as CodingAgentHash).generatedHash,
+        contextThreadPairsHash: (ah as CodingAgentHash).contextThreadPairsHash,
       };
     default:
       throw new Error(`Unsupported metadata type for summary: ${meta.type}`);
@@ -113,18 +114,34 @@ function parseThreadPairs(raw: string): ThreadPair[] {
     throw new Error("contextThreadPairs is not an array");
   }
 
-  return parsed.filter((value): value is ThreadPair => {
+  type RawThreadPair = Partial<ThreadPair> & {
+    prompt?: string;
+    response?: string;
+    codeBlocks?: unknown;
+  };
+
+  return parsed.filter((value): value is RawThreadPair => {
     if (!value || typeof value !== "object") {
       return false;
     }
-    const pair = value as Partial<ThreadPair>;
+    const pair = value as RawThreadPair;
     return (
       typeof pair.id === "string" &&
       typeof pair.time === "number" &&
-      typeof pair.prompt === "string" &&
-      typeof pair.response === "string"
+      (typeof pair.userMessage === "string" || typeof pair.prompt === "string") &&
+      (typeof pair.botResponse === "string" || typeof pair.response === "string")
     );
-  });
+  }).map((pair) => ({
+    id: pair.id as string,
+    time: pair.time as number,
+    userMessage: pair.userMessage ?? pair.prompt ?? "",
+    botResponse: pair.botResponse ?? pair.response ?? "",
+    codeBlocks: Array.isArray(pair.codeBlocks) ? pair.codeBlocks.filter((block) => (
+      block &&
+      typeof block === "object" &&
+      typeof (block as { code?: unknown }).code === "string"
+    )) as ThreadPair["codeBlocks"] : [],
+  }));
 }
 
 export async function showSummary(

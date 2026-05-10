@@ -20,7 +20,7 @@ import path from 'path';
 import { fstat, openSync } from 'fs';;
 import * as os from "os";
 import * as fs from "fs";
-import { RestoredCodeBlock } from '../constants/types';
+import { CodeBlock, RestoredCodeBlock, ThreadPair } from '../constants/types';
 import { cachedDataVersionTag } from 'v8';
 import * as vscode from "vscode";
 
@@ -627,6 +627,7 @@ export async function showFullMdAndHighlightMd(
     promptText: string,
     generatedText: string,
     codeBlocks: RestoredCodeBlock[],
+    contextThreadPairs: string|null,
     context: ExtensionContext,
 )
 :Promise<void>{
@@ -652,11 +653,13 @@ export async function showFullMdAndHighlightMd(
             language: cb.language ?? "text", //languageがundefinedならtext
         })),
     );
+    const contextThreadPairsMd = formatContextThreadPairsMarkdown(contextThreadPairs);
     panel.webview.html=webviewContentMarkdown(
         context.extensionUri.fsPath,
         panel.webview,
         promptText,
-        generatedMd
+        generatedMd,
+        contextThreadPairsMd,
     );
 
     // 正規化
@@ -680,6 +683,7 @@ function webviewContentMarkdown(
     webview: Webview,
     promptText: string,
     generatedText: string,
+    contextThreadPairsText: string,
 ): string {
     const htmlPath = path.join(extensionPath, "media", "show_markdown.html");
     const nonce = getNonce();
@@ -699,11 +703,109 @@ function webviewContentMarkdown(
 
     html = replaceAllToken(html, "promptText", escapeForHtmlTemplate(promptText ?? ""));
     html = replaceAllToken(html, "generatedText", escapeForHtmlTemplate(generatedText ?? ""));
+    html = replaceAllToken(html, "contextThreadPairsText", escapeForHtmlTemplate(contextThreadPairsText ?? ""));
 
     const leftovers = html.match(/\{\{\s*\w+\s*\}\}/g);
     if (leftovers) console.error("Unreplaced template tokens remain:", leftovers);
 
     return html;
+}
+
+// contextThreadPairsをmarkdownに変換
+function formatContextThreadPairsMarkdown(raw: string | null): string {
+    if (!raw) {
+        return "";
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return "";
+    }
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+        return "";
+    }
+
+    const pairs = parsed.filter(isThreadPairLike).map(normalizeThreadPair);
+    if (pairs.length === 0) {
+        return "";
+    }
+
+    const sections = ["## Previous Conversation"];
+    for (const [index, pair] of pairs.entries()) {
+        sections.push(`### Pair ${index + 1}`);
+        sections.push(`id: ${pair.id}`);
+        sections.push(`time: ${pair.time}`);
+        sections.push("");
+        sections.push("#### Prompt");
+        sections.push(pair.userMessage);
+        sections.push("");
+        sections.push("#### Response");
+        sections.push(pair.botResponse);
+
+        if (pair.codeBlocks.length > 0) {
+            sections.push("");
+            sections.push("#### Code Blocks");
+            for (const block of pair.codeBlocks) {
+                const lang = block.language ?? "";
+                sections.push(`\`\`\`${lang}`);
+                sections.push(block.code);
+                sections.push("```");
+            }
+        }
+
+        sections.push("");
+    }
+
+    return sections.join("\n").trim();
+}
+
+function isThreadPairLike(value: unknown): value is ThreadPair {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const pair = value as Partial<ThreadPair> & {
+        prompt?: string;
+        response?: string;
+        codeBlocks?: unknown;
+    };
+
+    return (
+        typeof pair.id === "string" &&
+        typeof pair.time === "number" &&
+        (typeof pair.userMessage === "string" || typeof pair.prompt === "string") &&
+        (typeof pair.botResponse === "string" || typeof pair.response === "string")
+    );
+}
+
+type RawThreadPair = Partial<ThreadPair> & {
+    prompt?: string;
+    response?: string;
+    codeBlocks?: unknown;
+};
+
+function normalizeThreadPair(pair: RawThreadPair): ThreadPair {
+    return {
+        id: pair.id as string,
+        time: pair.time as number,
+        userMessage: pair.userMessage ?? (pair as { prompt?: string }).prompt ?? "",
+        botResponse: pair.botResponse ?? (pair as { response?: string }).response ?? "",
+        codeBlocks: Array.isArray(pair.codeBlocks)
+            ? pair.codeBlocks.filter(isThreadCodeBlockLike)
+            : [],
+    };
+}
+
+function isThreadCodeBlockLike(value: unknown): value is CodeBlock {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const block = value as Partial<CodeBlock>;
+    return typeof block.code === "string";
 }
 
 

@@ -37,6 +37,7 @@ export interface CodingAgentHash{
   promptHash: string,
   generatedHash: string,
   codeBlockHashes: CodeBlockHash[],
+  contextThreadPairsHash?: string,
 }
 
 export interface ChromePDFHash{
@@ -115,6 +116,16 @@ export interface GoogleSheetsMetadata{
 export interface ThreadPair{
     id: string;
     time: number;
-    prompt: string;
-    response: string;
+    userMessage: string;
+    botResponse: string;
+    codeBlocks: CodeBlock[];
+}
+
+export interface CodeBlock{
+    code: string;
+    copied: boolean;
+    surroundingText?: string;
+    language?: string;
+    parentId?: string;
+    turnParentId?: string;
 }

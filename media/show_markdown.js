@@ -14,13 +14,20 @@
 
   const promptEl = document.getElementById("prompt");
   const genEl = document.getElementById("generated");
+  const contextSectionEl = document.getElementById("context-section");
+  const contextEl = document.getElementById("context-thread-pairs");
 
   const promptText = document.getElementById("tp-prompt")?.value || "";
   const generatedText = document.getElementById("tp-generated")?.value || "";
+  const contextThreadPairsText = document.getElementById("tp-context-thread-pairs")?.value || "";
 
 
   promptEl.innerHTML = md.render(promptText);
   genEl.innerHTML = md.render(generatedText);
+  if (contextThreadPairsText.trim()) {
+    contextEl.innerHTML = md.render(contextThreadPairsText);
+    contextSectionEl.style.display = "";
+  }
 
   // extensionに準備完了通知
   vscode.postMessage({ type: "ready" });
