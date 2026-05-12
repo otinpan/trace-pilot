@@ -22,6 +22,8 @@ import {
   TurnContext,
 } from "./codex-type";
 
+import { logMethodMessage } from "../../constants/logger";
+
 interface CodexPromptPair {
   id: string;
   cwd?: string;
@@ -69,6 +71,7 @@ export async function createHashFromCodex(burst: BurstState): Promise<string | n
 // 各ファイルからCodexPromptPairを作成する
 // 直近3つのthread pairがあるなら取ってくる
 async function scanCodexSession(filePath: string, burst: BurstState): Promise<CodexPromptPair[] | null> {
+
   const content = await readFile(filePath, "utf8");
   const lines = content.split("\n").filter((line) => line.trim() !== "");
   const state: SessionScanState = {
@@ -148,15 +151,15 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
         const eventTime = resolveEventTime(event.timestamp, payload, state.lastTurnTime);
 
         // 古いものからpushしていく
-        codexPromptPairs.push(
-          {
-            id: state.currentTurnId ?? `turn-${eventTime}`,
-            cwd: state.cwd,
-            prompt,
-            generated,
-            time: eventTime,
-          }
-        )
+        const completedPromptPair: CodexPromptPair={
+          id: state.currentTurnId ?? `turn-${eventTime}`,
+          cwd: state.cwd,
+          prompt,
+          generated,
+          time: eventTime,
+        }
+
+        codexPromptPairs.push(completedPromptPair);
 
         // サイズが3になるようにpop
         if(codexPromptPairs.length>=4){
@@ -345,7 +348,8 @@ function checkCollectPatches(
 }
 
 function normalizePath(filePath: string): string {
-  return filePath.replace(/\\/g, "/");
+  const normalized = path.normalize(filePath).replace(/\\/g, "/");
+  return normalized.replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`);
 }
 
 function normalizeDiff(diff: string): string {
