@@ -12,8 +12,13 @@
 ![](Assets/OpenSummary_original_pair.png)
 ![](Assets/OpenSummary.png)
 
-## [1.2.0]
+## [1.1.1]
 - released: 2026/04/30
 * Previously, when `.trace-worktree` did not exist, Trace Pilot created a branch and then created the worktree from it, so saving in the middle of a project also copied the branch's tracked files into `.trace-worktree`.
 * Trace Pilot now creates `trace-store` as an orphan branch, so existing project files are not copied into `.trace-worktree` and only stored blobs are added there.
 
+## [1.2.0]
+- released: 2026/05/14
+* Previously, clicking `guess prompt` only asked GPT-4 to infer the intent behind inserted code.
+* Trace Pilot now stores the actual prompt-generated pair used by Codex for Codex-originated edits, along with the two immediately preceding pairs.
+* Clicking the link now reveals the prompt-generated pair and the previous two pairs, making the intent behind Codex-assisted edits clearer.
