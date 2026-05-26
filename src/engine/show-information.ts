@@ -653,13 +653,13 @@ export async function showFullMdAndHighlightMd(
             language: cb.language ?? "text", //languageがundefinedならtext
         })),
     );
-    const contextThreadPairsMd = formatContextThreadPairsMarkdown(contextThreadPairs);
+    const contextThreadPairsJson = formatContextThreadPairsJson(contextThreadPairs);
     panel.webview.html=webviewContentMarkdown(
         context.extensionUri.fsPath,
         panel.webview,
         promptText,
         generatedMd,
-        contextThreadPairsMd,
+        contextThreadPairsJson,
     );
 
     // 正規化
@@ -711,8 +711,8 @@ function webviewContentMarkdown(
     return html;
 }
 
-// contextThreadPairsをmarkdownに変換
-function formatContextThreadPairsMarkdown(raw: string | null): string {
+// contextThreadPairsをWebviewで扱いやすいJSONに整える
+function formatContextThreadPairsJson(raw: string | null): string {
     if (!raw) {
         return "";
     }
@@ -733,33 +733,7 @@ function formatContextThreadPairsMarkdown(raw: string | null): string {
         return "";
     }
 
-    const sections = ["## Previous Conversation"];
-    for (const [index, pair] of pairs.entries()) {
-        sections.push(`### Pair ${index + 1}`);
-        sections.push(`id: ${pair.id}`);
-        sections.push(`time: ${pair.time}`);
-        sections.push("");
-        sections.push("#### Prompt");
-        sections.push(pair.userMessage);
-        sections.push("");
-        sections.push("#### Response");
-        sections.push(pair.botResponse);
-
-        if (pair.codeBlocks.length > 0) {
-            sections.push("");
-            sections.push("#### Code Blocks");
-            for (const block of pair.codeBlocks) {
-                const lang = block.language ?? "";
-                sections.push(`\`\`\`${lang}`);
-                sections.push(block.code);
-                sections.push("```");
-            }
-        }
-
-        sections.push("");
-    }
-
-    return sections.join("\n").trim();
+    return JSON.stringify(pairs);
 }
 
 function isThreadPairLike(value: unknown): value is ThreadPair {

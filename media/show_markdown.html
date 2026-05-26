@@ -84,9 +84,96 @@
       border: 0;
       border-top: 1px solid rgba(255,255,255,0.16);
     }
+    .context-pair {
+      margin-top: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.035);
+      overflow: hidden;
+    }
+    .context-pair-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      color: var(--text-main);
+    }
+    .context-pair-summary:hover {
+      background: rgba(255,255,255,0.05);
+    }
+    .context-pair-title {
+      font-weight: 700;
+      color: #c9e5ff;
+    }
+    .context-pair-meta {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-sub);
+      font-size: 12px;
+    }
+    .context-pair-body {
+      display: grid;
+      gap: 10px;
+      padding: 0 12px 12px;
+      border-top: 1px solid rgba(255,255,255,0.12);
+    }
+    .context-message {
+      min-width: 0;
+      padding-top: 10px;
+    }
+    .context-message-title,
+    .context-codeblocks-summary,
+    .context-codeblock-title {
+      color: #9fd0ff;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .context-message-content {
+      max-height: 280px;
+      overflow: auto;
+      margin-top: 6px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.18);
+    }
+    .context-message-content > :first-child {
+      margin-top: 0;
+    }
+    .context-message-content > :last-child {
+      margin-bottom: 0;
+    }
+    .context-codeblocks {
+      margin-top: 4px;
+    }
+    .context-codeblocks-summary {
+      cursor: pointer;
+      padding: 8px 0;
+    }
+    .context-codeblock {
+      margin-top: 8px;
+    }
+    .context-codeblock pre {
+      margin-top: 6px;
+      max-height: 260px;
+    }
     @media (max-width: 700px){
       body{
         padding: 14px;
+      }
+      .context-pair-summary {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .context-pair-meta {
+        max-width: 100%;
       }
     }
   </style>
