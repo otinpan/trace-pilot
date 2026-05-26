@@ -45,6 +45,8 @@ interface SessionScanState {
   lastTurnTime?: number;
 }
 
+const PATCH_MATCH_RATIO_THRESHOLD = 0.8;
+
 export async function createHashFromCodex(burst: BurstState): Promise<string | null> {
   if (burst.burst_time == null) {
     return null;
@@ -316,7 +318,7 @@ function extractPatches(
 
 }
 
-// 全てのbatchがburstのどれかに内包されていればtrue
+// patchの一定割合がburstのどれかに内包されていればtrue
 function checkCollectPatches(
   patches: CollectedPatch[],
   burst: BurstState,
@@ -331,20 +333,24 @@ function checkCollectPatches(
     diff_unified: normalizeDiff(record.diff_unified),
   }));
 
-  const allMatched = patches.every((patch) =>
+  const matchedCount = patches.filter((patch) =>
     burstPatches.some(
       (burstPatch) =>
         burstPatch.path === patch.path &&
         diffContainsPatch(burstPatch.diff_unified, patch.diff_unified),
     ),
-  );
+  ).length;
 
-  if (allMatched) {
+  const matchRatio = matchedCount / patches.length;
+  const isMatched = matchRatio >= PATCH_MATCH_RATIO_THRESHOLD;
+
+  if (isMatched) {
     console.log("collect patches\n", patches);
     console.log("match burst\n", burst);
+    console.log("patch match ratio\n", matchRatio);
   }
 
-  return allMatched;
+  return isMatched;
 }
 
 function normalizePath(filePath: string): string {
