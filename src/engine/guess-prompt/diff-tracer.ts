@@ -90,6 +90,8 @@ const EXTERNAL_BURST_IDLE_MS = 1000; // 外部ファイル書き込みが終わ�
 const MAX_DIFF_CHARS = 200_000;
 const CREATED_DEDUPE_WINDOW_MS = 1000;
 const BURST_GROUP_IDLE_MS=10_000; // busrtを確定させるまでの時間 (External)
+const TRACER_DIRNAME = ".intent-tracer";
+const TRACER_GITIGNORE_ENTRY = `${TRACER_DIRNAME}/`;
 const IGNORE_PATH_PARTS = [
   "/.git/",
   "/node_modules/",
@@ -578,6 +580,7 @@ export class DiffTracer {
     const file = this.getEventsFilePath();
     if (!file) return;
 
+    await ensureWorkspaceGitignoreEntry(file, TRACER_GITIGNORE_ENTRY);
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
     await fs.promises.appendFile(file, JSON.stringify(obj) + "\n", { encoding: "utf8" });
   }
@@ -585,7 +588,7 @@ export class DiffTracer {
   private getEventsFilePath(): string | null {
     const ws = vscode.workspace.workspaceFolders?.[0];
     if (!ws) return null;
-    return path.join(ws.uri.fsPath, ".intent-tracer", "events.jsonl");
+    return path.join(ws.uri.fsPath, TRACER_DIRNAME, "events.jsonl");
   }
 
   private async removeTracerDir(): Promise<void> {
@@ -594,6 +597,32 @@ export class DiffTracer {
     const dir = path.dirname(file);
     await fs.promises.rm(dir, { recursive: true, force: true });
   }
+}
+
+async function ensureWorkspaceGitignoreEntry(filePath: string, entry: string): Promise<void> {
+  const workspaceRoot = path.dirname(path.dirname(filePath));
+  const gitignorePath = path.join(workspaceRoot, ".gitignore");
+
+  let content = "";
+  try {
+    content = await fs.promises.readFile(gitignorePath, "utf8");
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== "ENOENT") throw error;
+  }
+
+  const normalizedEntry = entry.replace(/\/+$/, "");
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.replace(/\/+$/, ""));
+
+  if (lines.includes(normalizedEntry)) return;
+
+  const nextContent =
+    content.length > 0 && !content.endsWith("\n") ? `${content}\n${entry}\n` : `${content}${entry}\n`;
+  await fs.promises.writeFile(gitignorePath, nextContent, "utf8");
 }
 
 function parseHunkTargetsFromUnifiedDiff(diff: string): HunkTarget[] {
@@ -701,4 +730,8 @@ function hasNullByte(s: string): boolean {
 function inferLanguageId(uri: vscode.Uri): string {
   const ext = path.extname(uri.fsPath).slice(1).toLowerCase();
   return ext ? ext : "plaintext";
+}
+
+function ensureGitIgnore(){
+
 }
