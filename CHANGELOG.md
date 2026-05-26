@@ -22,3 +22,10 @@
 * Previously, clicking `guess prompt` only asked GPT-4 to infer the intent behind inserted code.
 * Trace Pilot now stores the actual prompt-generated pair used by Codex for Codex-originated edits, along with the two immediately preceding pairs.
 * Clicking the link now reveals the prompt-generated pair and the previous two pairs, making the intent behind Codex-assisted edits clearer.
+
+## [1.2.1]
+- released: 2026/05/26
+* `guess prompt` now detects Codex edits that add new files, not only edits to existing files.
+* Improved Codex edit detection by waiting a little longer for file changes to settle. This reduces cases where Codex-made changes were not recognized as Codex changes.
+* Previous conversation context is now easier to read when opening ChatGPT or Codex sources. Context thread pairs are grouped by interaction and can be expanded or collapsed.
+* `.intent-tracer` is now added to `.gitignore` by default, so Trace Pilot's local tracing data is not accidentally committed.
