@@ -86,10 +86,10 @@ export interface BurstState{
 }
 
 const BURST_IDLE_MS = 3000; // burstを確定させるまでの時間 (Editor)
-const EXTERNAL_BURST_IDLE_MS = 1000; // 外部ファイル書き込みが終わったかを判定する時間
+const EXTERNAL_BURST_IDLE_MS = 5000; // 外部ファイル書き込みが終わったかを判定する時間
 const MAX_DIFF_CHARS = 200_000;
 const CREATED_DEDUPE_WINDOW_MS = 1000;
-const BURST_GROUP_IDLE_MS=10_000; // busrtを確定させるまでの時間 (External)
+const BURST_GROUP_IDLE_MS=15_000; // busrtを確定させるまでの時間 (External)
 const TRACER_DIRNAME = ".intent-tracer";
 const TRACER_GITIGNORE_ENTRY = `${TRACER_DIRNAME}/`;
 const IGNORE_PATH_PARTS = [
@@ -205,7 +205,6 @@ export class DiffTracer {
     b.timer=undefined;
     b.burst_time=Date.now();
 
-    console.log("close: ",b);
     this.latestCloseBurst=b;
     this.currentBurst=null;
   }
@@ -732,6 +731,3 @@ function inferLanguageId(uri: vscode.Uri): string {
   return ext ? ext : "plaintext";
 }
 
-function ensureGitIgnore(){
-
-}

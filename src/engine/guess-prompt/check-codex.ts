@@ -29,6 +29,7 @@ interface CodexPromptPair {
   cwd?: string;
   prompt: string;
   generated: string;
+  appliedPatches: CollectedPatch[];
   time: number;
 }
 
@@ -42,10 +43,11 @@ interface SessionScanState {
   currentTurnId?: string;
   userMessages: string[];
   assistantMessages: string[];
+  appliedPatches: CollectedPatch[];
   lastTurnTime?: number;
 }
 
-const PATCH_MATCH_RATIO_THRESHOLD = 0.8;
+const PATCH_MATCH_RATIO_THRESHOLD = 0.6;
 
 export async function createHashFromCodex(burst: BurstState): Promise<string | null> {
   if (burst.burst_time == null) {
@@ -79,6 +81,7 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
   const state: SessionScanState = {
     userMessages: [],
     assistantMessages: [],
+    appliedPatches: [],
   };
 
   let codexPromptPairs: CodexPromptPair[]=[];
@@ -139,6 +142,7 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
         isContainingCollectPatches=false;
         state.userMessages = [];
         state.assistantMessages = [];
+        state.appliedPatches = [];
         state.lastTurnTime = typeof payload.started_at === "number" ? payload.started_at * 1000 : undefined;
         continue;
       }
@@ -158,6 +162,7 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
           cwd: state.cwd,
           prompt,
           generated,
+          appliedPatches: [...state.appliedPatches],
           time: eventTime,
         }
 
@@ -184,6 +189,9 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
         continue;
       }
 
+      state.appliedPatches.push(...patches);
+
+      console.log("patches:",patches);
       const isCollectPatches=checkCollectPatches(patches, burst);
       if (isCollectPatches){
         console.log("collect patches\n",patches);
@@ -224,10 +232,10 @@ async function createMetaHashFromTurn(
     : matched.generated;
   const generatedHash = await calculateHashAndStore(generatedText);
   const codeBlockHashes: CodeBlockHash[] = await Promise.all(
-    recordEntries.map(async ([, record], index) => ({
+    matched.appliedPatches.map(async (patch, index) => ({
       index,
-      codeHash: await calculateHashAndStore(record.diff_unified),
-      language: "diff",
+      codeHash: await calculateHashAndStore(patch.diff_unified),
+      language: inferLanguageFromPath(patch.path) ?? "diff",
     })),
   );
 
@@ -304,14 +312,20 @@ function extractPatches(
 
     const patch = value as Record<string, unknown>;
     const unifiedDiff = typeof patch.unified_diff === "string" ? patch.unified_diff : null;
-    if (!unifiedDiff) {
+    if (unifiedDiff) {
+      patches.push({
+        path: normalizePath(filePath),
+        diff_unified: normalizeDiff(unifiedDiff),
+      });
       continue;
     }
 
-    patches.push({
-      path: normalizePath(filePath),
-      diff_unified: normalizeDiff(unifiedDiff),
-    });
+    if (patch.type === "add" && typeof patch.content === "string") {
+      patches.push({
+        path: normalizePath(filePath),
+        diff_unified: toAddedLinesDiff(patch.content),
+      });
+    }
   }
 
   return patches.length > 0 ? patches : null;
@@ -344,11 +358,7 @@ function checkCollectPatches(
   const matchRatio = matchedCount / patches.length;
   const isMatched = matchRatio >= PATCH_MATCH_RATIO_THRESHOLD;
 
-  if (isMatched) {
-    console.log("collect patches\n", patches);
-    console.log("match burst\n", burst);
-    console.log("patch match ratio\n", matchRatio);
-  }
+  console.log("patch match ratio\n", matchRatio);
 
   return isMatched;
 }
@@ -356,6 +366,64 @@ function checkCollectPatches(
 function normalizePath(filePath: string): string {
   const normalized = path.normalize(filePath).replace(/\\/g, "/");
   return normalized.replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`);
+}
+
+function inferLanguageFromPath(filePath: string): string | undefined {
+  const ext = path.extname(filePath).toLowerCase();
+  const extToLanguage: Record<string, string> = {
+    ".ts": "typescript",
+    ".tsx": "typescriptreact",
+    ".js": "javascript",
+    ".jsx": "javascriptreact",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".json": "json",
+    ".jsonc": "jsonc",
+    ".md": "markdown",
+    ".py": "python",
+    ".rb": "ruby",
+    ".php": "php",
+    ".java": "java",
+    ".go": "go",
+    ".rs": "rust",
+    ".c": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".h": "c",
+    ".hpp": "cpp",
+    ".cs": "csharp",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".scala": "scala",
+    ".lua": "lua",
+    ".pl": "perl",
+    ".sh": "shellscript",
+    ".bash": "shellscript",
+    ".zsh": "shellscript",
+    ".fish": "shellscript",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".toml": "toml",
+    ".xml": "xml",
+    ".html": "html",
+    ".css": "css",
+    ".scss": "scss",
+    ".sass": "sass",
+    ".less": "less",
+    ".sql": "sql",
+  };
+
+  return extToLanguage[ext];
+}
+
+function toAddedLinesDiff(content: string): string {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\n$/, "");
+  return normalized
+    .split("\n")
+    .map((line) => `+${line}`)
+    .join("\n")
+    .trim();
 }
 
 function normalizeDiff(diff: string): string {
