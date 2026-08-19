@@ -123,7 +123,10 @@ async function scanCodexSession(filePath: string, burst: BurstState): Promise<Co
         continue;
       }
       if (payload.role === "user") {
-        state.userMessages.push(text);
+        const prompt = sanitizeCodexUserPrompt(text);
+        if (prompt) {
+          state.userMessages.push(prompt);
+        }
       } else if (payload.role === "assistant") {
         state.assistantMessages.push(text);
       }
@@ -293,6 +296,12 @@ function extractResponseItemText(content: ResponseItemContent[] | undefined): st
   return content
     .map((item) => (typeof item.text === "string" ? item.text : ""))
     .join("")
+    .trim();
+}
+
+function sanitizeCodexUserPrompt(text: string): string {
+  return text
+    .replace(/<(recommended_plugins|environment_context)>[\s\S]*?<\/\1>/g, "")
     .trim();
 }
 

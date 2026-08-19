@@ -29,3 +29,8 @@
 * Improved Codex edit detection by waiting a little longer for file changes to settle. This reduces cases where Codex-made changes were not recognized as Codex changes.
 * Previous conversation context is now easier to read when opening ChatGPT or Codex sources. Context thread pairs are grouped by interaction and can be expanded or collapsed.
 * `.intent-tracer` is now added to `.gitignore` by default, so Trace Pilot's local tracing data is not accidentally committed.
+
+## [1.2.2]
+- released: 2026/08/19
+### Fixed
+- Exclude Codex internal context blocks from stored user prompts.
